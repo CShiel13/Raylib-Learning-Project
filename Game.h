@@ -190,47 +190,58 @@ private:
         TopBar();
         int claimable = 0;
         for (int i = 0; i < (int)p.quests.size(); i++) if (p.CanClaim(i)) claimable++;
-        if (Button({700, 12, 110, 40}, "Shop", cBlue, true, 20)) screen = Screen::Shop;
-        if (Button({822, 12, 126, 40}, claimable ? TextFormat("Quests (%d)", claimable) : "Quests",
-                   claimable ? cRed : Color{255, 150, 0, 255}, true, 20)) screen = Screen::Quests;
+        if (Button({ 700, 12, 110, 40 }, "Shop", cBlue, true, 20)) screen = Screen::Shop;
+        if (Button({ 822, 12, 126, 40 }, claimable ? TextFormat("Quests (%d)", claimable) : "Quests",
+            claimable ? cRed : Color{ 255, 150, 0, 255 }, true, 20)) screen = Screen::Quests;
 
-        // topic tabs
+        // ---- topic tabs (wrap into rows of 9) ----------------------------
+        const int perRow = 9;
+        int tRows = ((int)topics.size() + perRow - 1) / perRow;
+        if (tRows < 1) tRows = 1;
+        float tabH = tRows > 1 ? 28.0f : 38.0f;
+        float tabY = 78.0f;
+        float panelTop = std::max(130.0f, tabY + tRows * (tabH + 4.0f) + 4.0f);
+        float panelH = 620.0f - panelTop;
+        float dy = panelTop - 130.0f;          // 0 for <=9 topics, 16 for 18
+
         for (int t = 0; t < (int)topics.size(); t++) {
-            Rectangle r = {12.0f + t * 104, 78, 100, 38};
+            int row = t / perRow, col = t % perRow;
+            Rectangle r = { 12.0f + col * 104, tabY + row * (tabH + 4.0f), 100, tabH };
             bool sel = t == selTopic;
             Color c = TopicOpen(t) ? topics[t].color : cLock;
             if (sel) DrawRectangleRounded(r, 0.3f, 8, c);
-            else DrawRectangleRoundedLinesFallback(r, c);
-            TextCentered(topics[t].shortName.c_str(), (int)(r.x + r.width / 2), (int)r.y + 11, 17, sel ? WHITE : cText);
+            else     DrawRectangleRoundedLinesFallback(r, c);
+            int fs = tRows > 1 ? 15 : 17;
+            TextCentered(topics[t].shortName.c_str(),
+                (int)(r.x + r.width / 2), (int)(r.y + (tabH - fs) / 2), fs, sel ? WHITE : cText);
             if (CheckCollisionPointRec(GetMousePosition(), r) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) selTopic = t;
         }
 
-        // character panel
-        DrawRectangleRounded({20, 130, 250, 490}, 0.06f, 8, WHITE);
+        // ---- character panel ---------------------------------------------
+        DrawRectangleRounded({ 20, panelTop, 250, panelH }, 0.06f, 8, WHITE);
         DrawAvatar(145, 235, 1.3f, p.Level());
         TextCentered(TextFormat("Level %d  -  %s", p.Level(), LevelTitle(p.Level())), 145, 350, 20, cText);
         DrawText("Unlocked items", 40, 390, 18, cSoft);
         struct Gear { const char* name; int lvl; };
-        static const Gear gear[] = {{"Hat", 2}, {"Glasses", 3}, {"Scarf", 5}, {"Cape", 7}, {"Crown", 10}};
+        static const Gear gear[] = { {"Hat", 2}, {"Glasses", 3}, {"Scarf", 5}, {"Cape", 7}, {"Crown", 10} };
         for (int i = 0; i < 5; i++) {
             bool got = p.Level() >= gear[i].lvl;
             DrawText(TextFormat("%s  (LVL %d)", gear[i].name, gear[i].lvl), 56, 418 + i * 26, 18, got ? cText : cLock);
             DrawCircle(44, 427 + i * 26, 5, got ? cGreen : cLine);
         }
-        int doneCount = (int)p.done.size();
-        DrawText(TextFormat("Modules cleared: %d", doneCount), 40, 580, 18, cText);
+        DrawText(TextFormat("Modules cleared: %d", (int)p.done.size()), 40, 580, 18, cText);
 
-        // topic panel
-        DrawRectangleRounded({290, 130, 650, 490}, 0.04f, 8, WHITE);
+        // ---- topic panel --------------------------------------------------
+        DrawRectangleRounded({ 290, panelTop, 650, panelH }, 0.04f, 8, WHITE);
         const Topic& T = topics[selTopic];
-        DrawText(T.name.c_str(), 316, 150, 32, T.color);
-        DrawWrapped(T.blurb, 316, 192, 600, 20, cSoft);
+        DrawText(T.name.c_str(), 316, (int)(150 + dy), 32, T.color);
+        DrawWrapped(T.blurb, 316, (int)(192 + dy), 600, 20, cSoft);
 
         if (!TopicOpen(selTopic)) {
-            TextCentered("This topic is locked", 615, 300, 30, cText);
-            TextCentered("Pass the previous topic test - or unlock it with coins", 615, 345, 20, cSoft);
+            TextCentered("This topic is locked", 615, (int)(300 + dy), 30, cText);
+            TextCentered("Pass the previous topic test - or unlock it with coins", 615, (int)(345 + dy), 20, cSoft);
             bool afford = p.coins >= T.cost;
-            if (Button({515, 400, 200, 56}, TextFormat("Unlock  (%d)", T.cost), cGold, afford, 24)) {
+            if (Button({ 515, (float)(400 + dy), 200, 56 }, TextFormat("Unlock  (%d)", T.cost), cGold, afford, 24)) {
                 p.coins -= T.cost; p.unlocked.insert(selTopic); p.Save();
                 Toast("Topic unlocked!");
             }
@@ -241,31 +252,34 @@ private:
         for (int i = 0; i < count; i++) {
             bool isTest = i == (int)T.modules.size();
             int m = isTest ? -1 : i;
-            float cx = 290 + 65 + (i % 5) * 130, cy = 290 + (i / 5) * 150;
+            float cx = 290 + 65 + (i % 5) * 130;
+            float cy = 290 + dy + (i / 5) * 150;
             bool done = p.done.count(Key(selTopic, m)) > 0;
             bool open = NodeOpen(selTopic, i);
             float rad = isTest ? 46.0f : 40.0f;
             Color base = done ? cGold : (open ? T.color : cLock);
-            bool hover = CheckCollisionPointCircle(GetMousePosition(), {cx, cy}, rad);
-            DrawCircleV({cx, cy + 6}, rad, ColorBrightness(base, -0.25f));
-            DrawCircleV({cx, cy + ((hover && open && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) ? 4.0f : 0.0f)}, rad,
-                        (hover && open) ? ColorBrightness(base, 0.08f) : base);
-            if (done) {                                    // tick
-                DrawLineEx({cx - 14, cy}, {cx - 4, cy + 11}, 6, WHITE);
-                DrawLineEx({cx - 4, cy + 11}, {cx + 16, cy - 12}, 6, WHITE);
-            } else if (!open) {                            // padlock
-                DrawRectangleRounded({cx - 12, cy - 4, 24, 20}, 0.2f, 6, WHITE);
-                DrawRing({cx, cy - 6}, 6, 9, 180, 360, 12, WHITE);
-            } else {
-                TextCentered(isTest ? "TEST" : TextFormat("%d", i + 1), (int)cx, (int)cy - (isTest ? 12 : 14), isTest ? 24 : 30, WHITE);
+            bool hover = CheckCollisionPointCircle(GetMousePosition(), { cx, cy }, rad);
+            DrawCircleV({ cx, cy + 6 }, rad, ColorBrightness(base, -0.25f));
+            DrawCircleV({ cx, cy + ((hover && open && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) ? 4.0f : 0.0f) }, rad,
+                (hover && open) ? ColorBrightness(base, 0.08f) : base);
+            if (done) {
+                DrawLineEx({ cx - 14, cy }, { cx - 4, cy + 11 }, 6, WHITE);
+                DrawLineEx({ cx - 4, cy + 11 }, { cx + 16, cy - 12 }, 6, WHITE);
+            }
+            else if (!open) {
+                DrawRectangleRounded({ cx - 12, cy - 4, 24, 20 }, 0.2f, 6, WHITE);
+                DrawRing({ cx, cy - 6 }, 6, 9, 180, 360, 12, WHITE);
+            }
+            else {
+                TextCentered(isTest ? "TEST" : TextFormat("%d", i + 1),
+                    (int)cx, (int)cy - (isTest ? 12 : 14), isTest ? 24 : 30, WHITE);
             }
             const std::string& title = isTest ? T.test.title : T.modules[i].title;
             TextCentered(title.c_str(), (int)cx, (int)(cy + rad + 14), 16, open ? cText : cSoft);
             if (hover && open && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) StartLesson(selTopic, m);
         }
-        DrawText("Tip: 3 correct answers in a row gives a COMBO - double coins!", 316, 580, 18, cSoft);
+        DrawText("Tip: 3 correct answers in a row gives a COMBO - double coins!", 316, (int)(580 + dy), 18, cSoft);
     }
-
     static void DrawRectangleRoundedLinesFallback(Rectangle r, Color c) {   // outline without version-specific API
         DrawRectangleRounded(r, 0.3f, 8, c);
         DrawRectangleRounded({r.x + 2, r.y + 2, r.width - 4, r.height - 4}, 0.3f, 8, WHITE);
