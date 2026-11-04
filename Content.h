@@ -516,218 +516,347 @@ inline std::vector<Topic> BuildTopics() {
 inline std::vector<Topic> BuildCppTopics() {
     std::vector<Topic> T;
 
-    // ---------------------------------------------------------------- 1
-    T.push_back(MakeTopic("C++ Basics", "Basics", "Compilation, syntax, and your first C++ program.",
+    // ---------------------------------------------------------------- 1: M1
+    T.push_back(MakeTopic("Basic Syntax, Compilation & I/O", "Basics",
+        "The compilation pipeline, fundamental types and getting text onto the screen.",
         Color{ 60,120,220,255 }, 0,
         {
-            WithCode(M("Hello, C++", {
-                Q("Which header provides std::cout?", {"<iostream>", "<stdio.h>", "<cout>", "<print>"}, "iostream defines cin/cout."),
-                Q("Which is the entry point of a C++ program?", {"int main()", "void start()", "void main()", "main()"}, "Standard is int main()."),
-                Q("How does C++ source become an executable?", {"Compiled to machine code", "Interpreted at runtime", "Runs on the JVM", "Runs on .NET"}, "C++ is a compiled language."),
-            }), "Print \"Hello\" using std::cout (end with ;).", "std::cout << ...;",
-            {"std::cout << \"Hello\";", "cout << \"Hello\";"}, "std::cout << \"Hello\";"),
+            WithCode(M("Compilation & Types", {
+                Q("What is the correct order of the compilation pipeline?",
+                  {"Preprocess, compile, assemble, link", "Compile, preprocess, link, assemble", "Link, compile, preprocess, assemble", "Assemble, compile, preprocess, link"},
+                  "Preprocessor, compiler, assembler, linker."),
+                Q("Which is a fundamental type?",
+                  {"int", "string", "vector", "array"},
+                  "int, double, char, bool are fundamental."),
+                Q("What does sizeof(int) return on typical systems?",
+                  {"4", "8", "2", "1"},
+                  "Usually 4 bytes; sizeof returns size_t."),
+            }), "Declare an int x and set it to 5.", "type name = value;",
+            {"int x = 5;"}, "int x = 5;"),
 
-            WithCode(M("Variables & Types", {
-                Q("Which declares an int?", {"int x = 5;", "integer x = 5;", "Int x(5);", "var x = 5;"}, "int is a primitive type."),
-                Q("What is auto x = 3.14; typed as?", {"double", "float", "decimal", "auto"}, "Decimal literals default to double."),
-                Q("Which type stores 'a'?", {"char", "string", "int", "letter"}, "Single quotes make a char."),
-            }), "Declare int age = 18;", "int name = value;",
-            {"int age = 18;"}, "type name = value;"),
+            WithCode(M("I/O with iostream", {
+                Q("Which header declares std::cout?",
+                  {"<iostream>", "<stdio.h>", "<cout>", "<print>"},
+                  "iostream declares the standard streams."),
+                Q("Which operator sends data to std::cout?",
+                  {"<<", ">>", "+", "->"},
+                  "<< inserts into the stream."),
+                Q("What does std::endl do?",
+                  {"Writes a newline and flushes the stream", "Only writes a newline", "Only flushes the stream", "Closes the stream"},
+                  "endl is newline plus flush."),
+            }), "Print Hello and a newline using std::cout.", "std::cout << ...;",
+            {"std::cout << \"Hello\" << std::endl;", "std::cout << \"Hello\\n\";", "cout << \"Hello\" << endl;"},
+            "std::cout << \"Hello\" << std::endl;"),
         },
         WithCode(M("Topic Test", {
-            Q("What namespace holds cout?", {"std", "io", "cxx", "sys"}, "using namespace std; brings it in."),
-            Q("sizeof(int) on most systems is...", {"4", "2", "8", "1"}, "Typically 4 bytes (32 bits)."),
-            Q("Which line ends a C++ statement?", {"semicolon ;", "newline", "period .", "nothing"}, "C++ uses semicolons."),
-            }), "Include the iostream header.", "#include <...>",
-            { "#include <iostream>", "#include<iostream>" }, "The iostream header supplies cout.")
+            Q("Which stage expands #include directives?", {"The preprocessor", "The compiler", "The assembler", "The linker"},
+              "The preprocessor expands includes and macros."),
+            Q("What must main() return?", {"int", "void", "auto", "size_t"}, "int main() is the portable signature."),
+            Q("Which is NOT a C++ type modifier?", {"static", "signed", "short", "long"}, "static is a storage class specifier."),
+            }), "Print the result of 2 + 3 with std::cout.", "std::cout << ...;",
+            { "std::cout << 2 + 3;", "std::cout << 2+3;" }, "std::cout << 2 + 3;")
             ));
 
-    // ---------------------------------------------------------------- 2
-    T.push_back(MakeTopic("Control Flow & Loops", "Flow", "if, switch, for, while: controlling the flow of code.",
+    // ---------------------------------------------------------------- 2: M2
+    T.push_back(MakeTopic("Control Flow & Functions", "Flow",
+        "if/switch/loops, function declarations vs definitions, and pass-by-value vs reference.",
         Color{ 80,140,230,255 }, 40,
         {
-            WithCode(M("Conditionals", {
-                Q("Which is valid C++?", {"if (x > 5) { }", "if x > 5 then", "if x > 5 do { }", "if: x > 5"}, "Conditions go in parentheses."),
-                Q("Which condition type does if accept?", {"Anything convertible to bool", "Only true/false", "Only int", "Only 0/1"}, "Implicit conversion to bool."),
-                Q("Which keyword handles no-match in switch?", {"default", "else", "case default", "other"}, "default is the fallback."),
-            }), "Print \"big\" if x > 10 (single line).", "if (...) std::cout << ...;",
-            {"if (x > 10) std::cout << \"big\";", "if(x>10)cout<<\"big\";"}, "A single if around cout."),
+            WithCode(M("Control Flow", {
+                Q("Which loop always runs at least once?", {"do-while", "while", "for", "range-for"}, "do-while checks after the body."),
+                Q("Which keyword exits a switch case?", {"break", "exit", "return", "stop"}, "Without break, execution falls through."),
+                Q("Which is a range-based for over v?", {"for (auto x : v)", "for (x in v)", "foreach (x : v)", "for (x of v)"}, "Colon syntax for ranges."),
+            }), "Write a for loop header counting i = 0..9 (include opening brace).", "for (...;...;...) {",
+            {"for (int i = 0; i < 10; ++i) {", "for (int i = 0; i < 10; i++) {", "for(int i=0;i<10;++i){"}, "for (init; cond; step) {"),
 
-            WithCode(M("Loops", {
-                Q("Which loop runs its body at least once?", {"do-while", "while", "for", "range-for"}, "do-while checks after the body."),
-                Q("for (int i=0; i<3; ++i) runs how many times?", {"3", "2", "4", "Forever"}, "i = 0, 1, 2."),
-                Q("Which keyword exits a loop immediately?", {"break", "exit", "stop", "quit"}, "break jumps past the loop."),
-            }), "Write a while header running while i < 5 (include {).", "while (...) {",
-            {"while (i < 5) {", "while(i<5){"}, "while (condition) { ... }"),
+            WithCode(M("Functions & Parameters", {
+                Q("What is the difference between a declaration and a definition?", {"A declaration names the function; a definition provides the body", "They are the same", "A definition comes first", "A declaration must be in a .cpp file"}, "Declarations go in headers; definitions in .cpp."),
+                Q("Which is the modern keyword to encourage inlining?", {"inline", "register", "auto", "static"}, "inline hints to the compiler."),
+                Q("Why pass by const reference for non-trivial types?", {"To avoid copies while preventing modification", "It is required", "To share memory", "To enable overloading"}, "const& avoids copies and prohibits mutation."),
+            }), "Declare a function inc that takes int& x and returns void (single line, no body).", "void name(int& p);",
+            {"void inc(int& x);"}, "void inc(int& x);"),
         },
         WithCode(M("Topic Test", {
-            Q("What does continue do?", {"Skips to the next iteration", "Exits the loop", "Ends the program", "Restarts the loop"}, "continue skips the rest of this pass."),
-            Q("Which is a range-for over an int array/vector v?", {"for (int x : v)", "for (int x in v)", "foreach (int x : v)", "for x of v"}, "Colon syntax."),
-            Q("while (true) creates...", {"An infinite loop", "A syntax error", "A do-while", "Nothing"}, "It loops forever (use break)."),
-            }), "Write a for loop header counting i = 0..9 (include {).", "for (...;...;...) {",
-            { "for (int i = 0; i < 10; ++i) {", "for (int i = 0; i < 10; i++) {", "for(int i=0;i<10;++i){" }, "for (init; cond; step) {")
+            Q("Where must the declaration of a function used across files appear?", {"In a header (.h / .hpp)", "In the .cpp of the caller", "Only in main", "In a comment"},
+              "Headers advertise the interface."),
+            Q("What does passing by value do?", {"Copies the argument", "Shares the argument", "Returns a reference", "Nothing"}, "The callee gets a copy."),
+            Q("Which is a valid main signature taking arguments?", {"int main(int argc, char* argv[])", "void main(char* argv[])", "int main(char* argv)", "main(int argc)"}, "Standard argc/argv form."),
+            }), "Declare (no body) a function greet that takes no arguments and returns void.", "void name();",
+            { "void greet();" }, "void greet();")
             ));
 
-    // ---------------------------------------------------------------- 3
-    T.push_back(MakeTopic("Functions", "Functions", "Parameters, returns, references and overloading.",
+    // ---------------------------------------------------------------- 3: M3
+    T.push_back(MakeTopic("Pointers & References", "Pointers",
+        "Addresses, dereferencing, nullptr, and references vs. pointers.",
         Color{ 100,160,240,255 }, 70,
         {
-            WithCode(M("Defining Functions", {
-                Q("Which return type means 'returns nothing'?", {"void", "null", "nil", "empty"}, "void."),
-                Q("Which is a valid signature?", {"int add(int a, int b)", "function add(a, b)", "int add(a, b)", "def add(a, b)"}, "Types are required."),
-                Q("When do you need a forward declaration?", {"When calling a function before its definition", "Never", "Only for int main", "Always"}, "The compiler must see the declaration first."),
-            }), "Define int square(int x) returning x*x (single line).", "int name(int p) { return ...; }",
-            {"int square(int x) { return x * x; }", "int square(int x){return x*x;}"}, "int name(params) { body }"),
+            WithCode(M("Memory & Pointers", {
+                Q("Which operator takes an address?", {"&", "*", "->", "."}, "The unary & operator."),
+                Q("Which operator dereferences a pointer?", {"*", "&", "->", "[]"}, "Unary *."),
+                Q("What is the modern null pointer literal?", {"nullptr", "NULL", "0", "void*"}, "nullptr is type-safe."),
+            }), "Declare an int pointer p initialized to nullptr.", "int* p = ...;",
+            {"int* p = nullptr;", "int *p = nullptr;"}, "int* p = nullptr;"),
 
-            WithCode(M("References & Overloading", {
-                Q("What does int& mean?", {"A reference to an int", "A pointer to an int", "A copy of an int", "An array of ints"}, "References alias another variable."),
-                Q("Passing an int by reference lets the function...", {"Modify the caller's int", "Only read the int", "Copy the int", "Delete the int"}, "References allow modification."),
-                Q("Function overloading requires...", {"Different parameter lists", "Different return types only", "Different names", "Different namespaces"}, "Different signatures."),
-            }), "Define void inc(int& x) that increments x (single line).", "void name(int& p) { ... }",
-            {"void inc(int& x) { ++x; }", "void inc(int& x) { x++; }", "void inc(int&x){++x;}"}, "Take int& to modify the caller's value."),
+            WithCode(M("References & const", {
+                Q("What does int& mean?", {"A reference to an int", "A pointer to an int", "A copy", "An array"}, "References alias an existing object."),
+                Q("What does const int& promise?", {"The function will not modify the argument", "The value cannot be read", "It is a pointer", "It is a copy"}, "const prevents modification."),
+                Q("Can a reference be reseated to another variable?", {"No", "Yes", "Only after delete", "Only if const"}, "Once bound, always bound."),
+            }), "Return a const reference to a member 'name': const std::string& getName() (single line, no body).", "const T& name() const;",
+            {"const std::string& getName() const;", "const std::string& getName();"}, "Return by const ref to avoid copies."),
         },
         WithCode(M("Topic Test", {
-            Q("Where do default arguments go?", {"In the declaration", "In the definition", "In the call", "Only in main"}, "They must appear in the declaration."),
-            Q("What does const int& promise?", {"The function will not modify the argument", "A null reference", "A pointer", "A copy"}, "const prevents modification."),
-            Q("The entry function's return type is...", {"int", "void", "bool", "auto"}, "int main() is standard."),
-            }), "Declare (no body) a function greet that takes no args and returns nothing.", "void greet();",
-            { "void greet();" }, "A declaration ends with ;")
+            Q("Which is the key difference between a pointer and a reference?", {"A reference cannot be null; a pointer can", "A pointer is faster", "They are identical", "References are dynamic"}, "References must bind to an object."),
+            Q("What does int* const p mean?", {"The pointer cannot be reseated", "The int cannot be modified", "Both are const", "Neither"}, "The pointer itself is const."),
+            Q("What does pointer arithmetic p + 1 do?", {"Advances by one element of the pointed-to type", "Adds one to the pointed value", "Advances one byte", "Nothing"}, "Pointer arithmetic is scaled by sizeof(T)."),
+            }), "Declare a const reference r to an int named x.", "const int& r = ...;",
+            { "const int& r = x;", "const int &r = x;" }, "const int& r = x;")
             ));
 
-    // ---------------------------------------------------------------- 4
-    T.push_back(MakeTopic("Pointers & Memory", "Pointers", "Addresses, indirection, new/delete and ownership.",
+    // ---------------------------------------------------------------- 4: M4
+    T.push_back(MakeTopic("Dynamic Memory & RAII", "Memory",
+        "Stack vs. heap, new/delete, and the RAII principle that ties resource lifetime to object lifetime.",
         Color{ 120,180,250,255 }, 100,
         {
-            WithCode(M("Pointers", {
-                Q("How do you get the address of x?", {"&x", "*x", "x&", "addr(x)"}, "The unary & operator."),
-                Q("How do you dereference pointer p?", {"*p", "&p", "p->", "p[0]"}, "Unary * reads through the pointer."),
-                Q("What is the modern null pointer literal?", {"nullptr", "NULL", "0", "void*"}, "nullptr is type-safe."),
-            }), "Declare an int pointer p = nullptr;", "int* p = ...;",
-            {"int* p = nullptr;", "int *p = nullptr;"}, "The * marks the pointer type."),
-
-            WithCode(M("Dynamic Memory", {
-                Q("Which allocates an int on the heap?", {"new int", "malloc int", "alloc int", "int* = new"}, "new int or new int(5)."),
-                Q("Which frees a single object allocated with new?", {"delete p;", "free(p);", "delete[] p;", "remove p;"}, "delete for new, delete[] for new[]."),
-                Q("Which frees an array from new int[10]?", {"delete[] p;", "delete p;", "free(p);", "delete p[10];"}, "Arrays need delete[]."),
-            }), "Allocate an int on the heap with value 5 and assign to p.", "int* p = new ...;",
-            {"int* p = new int(5);", "int* p = new int{5};", "int*p=new int(5);"}, "new int(5) allocates and initializes."),
-        },
-        WithCode(M("Topic Test", {
-            Q("A memory leak happens when...", {"You call new without matching delete", "You forget a semicolon", "You use nullptr", "You call delete twice"}, "Every new needs a delete."),
-            Q("p->x is the same as...", {"(*p).x", "&p.x", "p.x", "*p.x"}, "-> is sugar for (*p).x."),
-            Q("Compared to pointers, references...", {"Cannot be null and cannot be reseated", "Can be null", "Are always slower", "Are the same thing"}, "References are always bound."),
-            }), "Free the array allocated as new int[10] stored in p.", "delete ...",
-            { "delete[] p;", "delete [] p;" }, "Arrays require delete[].")
-            ));
-
-    // ---------------------------------------------------------------- 5
-    T.push_back(MakeTopic("Classes & OOP", "Classes", "Classes, constructors, inheritance and virtual dispatch.",
-        Color{ 140,200,255,255 }, 140,
-        {
-            WithCode(M("Classes & Constructors", {
-                Q("What is the default access in a class?", {"private", "public", "protected", "package"}, "Unlike struct, class defaults to private."),
-                Q("A constructor's name is...", {"The class name", "init", "new", "construct"}, "Same as the class, no return type."),
-                Q("What does this point to?", {"The current object", "The class", "The parent", "nullptr"}, "this is a pointer to the instance."),
-            }), "Declare an empty class named Dog (include ;).", "class Name { ... };",
-            {"class Dog { };", "class Dog{};"}, "Classes end with a semicolon."),
-
-            WithCode(M("Inheritance & virtual", {
-                Q("How do you inherit publicly from Animal?", {"class Dog : public Animal { }", "class Dog extends Animal", "class Dog inherits Animal", "class Dog uses Animal"}, "Colon + access specifier."),
-                Q("Which keyword enables runtime dispatch?", {"virtual", "abstract", "override", "dynamic"}, "virtual methods are dispatched at runtime."),
-                Q("Why do polymorphic base classes need a virtual destructor?", {"So deleting via base pointer destroys the derived part", "For faster destruction", "Because of constructors", "It is required by the compiler"}, "Otherwise derived destructor isn't called."),
-            }), "Write the class header: Dog inherits publicly from Animal (include {).", "class ... : public ... {",
-            {"class Dog : public Animal {", "class Dog:public Animal{"}, "class Derived : public Base"),
-        },
-        WithCode(M("Topic Test", {
-            Q("What makes a class abstract?", {"A pure virtual method (= 0)", "A private constructor", "No methods", "A virtual destructor"}, "Pure virtual = 0."),
-            Q("What does = 0 after a method mean?", {"Pure virtual", "Returns zero", "Default argument", "Deletes it"}, "Declares a pure virtual function."),
-            Q("What does the override keyword do?", {"Checks that the method really overrides a virtual", "Makes the method virtual", "Deletes the parent's version", "Nothing"}, "It documents and validates intent."),
-            }), "Declare a pure virtual void speak() (end with ;).", "virtual void ... = 0;",
-            { "virtual void speak() = 0;", "virtual void speak()=0;" }, "= 0 makes it pure virtual.")
-            ));
-
-    // ---------------------------------------------------------------- 6
-    T.push_back(MakeTopic("Templates & STL", "STL", "Generic code and the standard containers.",
-        Color{ 60,200,220,255 }, 180,
-        {
-            WithCode(M("Templates", {
-                Q("Which declares a template with type T?", {"template <typename T>", "template <T>", "template T", "generic <T>"}, "The typename keyword names the parameter."),
-                Q("When is a template instantiated?", {"At compile time", "At runtime", "At link time", "Never"}, "The compiler generates concrete code."),
-                Q("Templates avoid...", {"Writing the same code for every type", "Runtime overhead", "Both is fine", "Nothing"}, "Templates give zero-cost genericity."),
-            }), "Declare a template of type T and function T id(T x) (single line).", "template <...> ... name(...)",
-            {"template <typename T> T id(T x)", "template <class T> T id(T x)"}, "template <typename T> T id(T x)"),
-
-            WithCode(M("STL Containers", {
-                Q("Which STL container is a dynamic array?", {"std::vector", "std::list", "std::array", "std::map"}, "vector resizes itself."),
-                Q("Which STL container holds key-value pairs?", {"std::map", "std::set", "std::vector", "std::queue"}, "map stores keys with values."),
-                Q("Which container stores unique elements?", {"std::set", "std::vector", "std::list", "std::array"}, "set rejects duplicates."),
-            }), "Declare a std::vector<int> named v.", "std::vector<...> ...;",
-            {"std::vector<int> v;", "vector<int> v;"}, "std::vector<int> name;"),
-        },
-        WithCode(M("Topic Test", {
-            Q("Which method appends to a vector?", {"push_back", "append", "add", "insert_end"}, "v.push_back(x)."),
-            Q("Which function sorts a vector<int> named v?", {"std::sort(v.begin(), v.end())", "v.sort()", "sort(v)", "std::order(v)"}, "std::sort takes iterators."),
-            Q("Which header do STL algorithms like std::sort live in?", {"<algorithm>", "<vector>", "<utility>", "<numeric>"}, "std::sort is in <algorithm>."),
-            }), "Declare std::vector<int> v with {1, 2, 3}.", "std::vector<int> v = { ... };",
-            { "std::vector<int> v = {1, 2, 3};", "std::vector<int> v{1,2,3};", "vector<int> v = {1, 2, 3};" }, "Braces initialize the vector.")
-            ));
-
-    // ---------------------------------------------------------------- 7
-    T.push_back(MakeTopic("Smart Pointers & RAII", "RAII", "Automatic resource management with unique_ptr and shared_ptr.",
-        Color{ 100,220,180,255 }, 230,
-        {
-            WithCode(M("unique_ptr & shared_ptr", {
-                Q("std::unique_ptr represents...", {"Exclusive ownership", "Shared ownership", "A raw pointer", "A weak reference"}, "Only one owner at a time."),
-                Q("std::shared_ptr uses...", {"A reference count", "Unique ownership", "The GC", "Manual delete"}, "Shared owners share the count."),
-                Q("How do you create a unique_ptr<int> holding 5?", {"std::make_unique<int>(5)", "new std::unique_ptr<int>(5)", "std::unique_ptr<int>(new int)", "make_shared<int>(5)"}, "std::make_unique is preferred."),
-            }), "Create a unique_ptr<int> p holding 5 (use make_unique).", "auto p = std::make_unique<...>(...);",
-            {"auto p = std::make_unique<int>(5);", "std::unique_ptr<int> p = std::make_unique<int>(5);"}, "std::make_unique<int>(5)"),
+            WithCode(M("Stack vs. Heap", {
+                Q("Where do local variables live?", {"On the stack", "On the heap", "In registers only", "In static storage"}, "Automatic locals go on the stack."),
+                Q("Which operator allocates on the heap?", {"new", "malloc", "create", "alloc"}, "new (or malloc from C)."),
+                Q("Which frees an array allocated with new T[n]?", {"delete[] p;", "delete p;", "free(p);", "remove p;"}, "Arrays require delete[]."),
+            }), "Allocate an int with value 5 on the heap and assign it to p.", "int* p = new ...;",
+            {"int* p = new int(5);", "int* p = new int{5};"}, "new int(5)"),
 
             WithCode(M("RAII", {
                 Q("RAII stands for...", {"Resource Acquisition Is Initialization", "Runtime Allocation Is Invalid", "Reference And Iteration", "Readily Available I/O"}, "Resources are tied to object lifetime."),
-                Q("When is a destructor called?", {"When the object goes out of scope", "When delete is called only", "At program start", "Never"}, "Scope end triggers destruction."),
-                Q("RAII mainly prevents...", {"Resource leaks", "Stack overflows", "Compilation errors", "Slow sorting"}, "Automatic release avoids leaks."),
-            }), "Write the destructor for class MyClass (empty body, single line).", "~Name() { ... }",
-            {"~MyClass() { }", "~MyClass(){};"}, "~ClassName() { }"),
+                Q("When is a destructor called?", {"When the object goes out of scope", "Only when delete is called", "At program start", "Never"}, "Scope end triggers destruction."),
+                Q("RAII mainly prevents...", {"Resource leaks", "Stack overflows", "Compile errors", "Slow sorting"}, "Automatic release avoids leaks."),
+            }), "Write the destructor for class MyClass (single line).", "~Name() { ... }",
+            {"~MyClass() { }", "~MyClass(){}"}, "~ClassName() { }"),
         },
         WithCode(M("Topic Test", {
-            Q("When is a shared_ptr's object destroyed?", {"When the last shared_ptr goes away", "Immediately after creation", "At program start", "On nullptr"}, "Reference count reaching 0."),
-            Q("A unique_ptr can be...", {"Moved but not copied", "Copied freely", "Neither moved nor copied", "Cast to int"}, "Exclusive ownership means move-only."),
-            Q("What does std::move(p) do?", {"Transfers ownership", "Deletes p", "Copies p", "Nulls p"}, "Casts to an rvalue reference."),
-            }), "Declare std::unique_ptr<int> p owning a new int with value 42.", "auto p = std::make_unique<...>(...);",
-            { "auto p = std::make_unique<int>(42);", "std::unique_ptr<int> p = std::make_unique<int>(42);" }, "make_unique<int>(42)")
+            Q("A memory leak happens when...", {"You call new without matching delete", "You forget a semicolon", "You use nullptr", "You call delete twice"}, "Every new needs a delete."),
+            Q("What does the stack unwind do on an exception?", {"Calls destructors of locals as the stack unwinds", "Skips destructors", "Terminates", "Rewrites the stack"}, "Locals are destructed during unwinding."),
+            Q("Where does dynamic memory live?", {"On the heap", "On the stack", "In registers", "In static storage"}, "Heap storage until delete."),
+            }), "Allocate an array of 10 ints and assign it to p.", "int* p = new int[...];",
+            { "int* p = new int[10];" }, "new int[10]")
             ));
 
-    // ---------------------------------------------------------------- 8
-    T.push_back(MakeTopic("Modern C++", "Modern", "Lambdas, auto, move semantics and range-for.",
-        Color{ 220,140,180,255 }, 280,
+    // ---------------------------------------------------------------- 5: M5
+    T.push_back(MakeTopic("Smart Pointers", "Smart",
+        "unique_ptr, shared_ptr and weak_ptr: RAII applied to memory ownership.",
+        Color{ 60,200,220,255 }, 140,
         {
-            WithCode(M("Lambdas & auto", {
-                Q("Which is a valid lambda?", {"[](int a, int b) { return a + b; }", "lambda(int a, int b) { return a+b; }", "func(a, b) -> a+b", "(a, b) => a+b"}, "Square brackets begin a lambda."),
-                Q("What does auto do?", {"Deduces the type from the initializer", "Makes a variable dynamic", "Requires Java", "Makes a global"}, "The compiler infers the type."),
-                Q("How do you capture everything by reference?", {"[&]", "[=]", "[ref]", "[this]"}, "[&] captures by reference."),
-            }), "Declare auto add = lambda taking int a, int b returning a+b (single line).", "auto add = [](...) { return ...; };",
-            {"auto add = [](int a, int b) { return a + b; };", "auto add=[](int a, int b){return a+b;};"}, "[capture](params) { body }"),
+            WithCode(M("unique_ptr", {
+                Q("What ownership model does std::unique_ptr represent?", {"Exclusive ownership", "Shared ownership", "A raw pointer", "A weak reference"}, "One owner at a time."),
+                Q("Which factory creates a unique_ptr?", {"std::make_unique<T>(args)", "std::new_unique<T>()", "unique_ptr<T>(new T)", "std::allocate_unique<T>()"}, "Prefer make_unique."),
+                Q("Can a unique_ptr be copied?", {"No, only moved", "Yes", "Only for trivially copyable T", "Only when const"}, "Unique_ptr is move-only."),
+            }), "Create a unique_ptr<int> p holding 5 using make_unique.", "auto p = std::make_unique<...>(...);",
+            {"auto p = std::make_unique<int>(5);", "std::unique_ptr<int> p = std::make_unique<int>(5);"}, "std::make_unique<int>(5)"),
 
-            WithCode(M("Move semantics & range-for", {
-                Q("What does std::move do?", {"Casts to an rvalue reference", "Copies the object", "Deletes the object", "Swaps two objects"}, "It enables move construction."),
-                Q("What is T&&?", {"An rvalue reference", "A pointer", "A const reference", "An array"}, "Used for move semantics."),
-                Q("After std::move(x), x is...", {"Valid but unspecified", "Destroyed", "Null", "Always empty"}, "Do not rely on its value."),
-            }), "Iterate over vector<int> v by reference (just the for header, include opening {).", "for (auto& x : ...) {",
-            {"for (auto& x : v) {", "for (auto &x : v) {", "for(auto&x:v){"}, "for (auto& x : v) { ... }"),
+            WithCode(M("shared_ptr & weak_ptr", {
+                Q("How does shared_ptr know when to delete?", {"Reference counting", "A garbage collector", "Manual delete only", "Reference cycles"}, "The last owner deletes."),
+                Q("Which factory creates a shared_ptr?", {"std::make_shared<T>(args)", "std::shared<T>()", "std::new_shared<T>()", "std::shared_ptr::make<T>()"}, "Prefer make_shared."),
+                Q("What does weak_ptr break?", {"Reference cycles", "Reference counting", "Movability", "Const-correctness"}, "weak_ptr observes without owning."),
+            }), "Create a shared_ptr<int> p holding 42 using make_shared.", "auto p = std::make_shared<...>(...);",
+            {"auto p = std::make_shared<int>(42);", "std::shared_ptr<int> p = std::make_shared<int>(42);"}, "std::make_shared<int>(42)"),
         },
         WithCode(M("Topic Test", {
-            Q("Range-for over a vector by const reference:", {"for (const auto& x : v)", "for (auto x : v&)", "for (x : v)", "for x in v"}, "const auto& avoids copies and mutation."),
-            Q("nullptr vs NULL:", {"nullptr is type-safe", "NULL is type-safe", "They are identical", "NULL is newer"}, "nullptr has its own type."),
-            Q("override marks...", {"A virtual method that overrides a parent's", "A function that hides", "A class", "A constructor"}, "It documents and validates overriding."),
-            }), "Loop over vector<int> v with an iterator named it (header only).", "for (auto it = ...; ...; ...)",
-            { "for (auto it = v.begin(); it != v.end(); ++it)", "for(auto it=v.begin();it!=v.end();++it)" }, "Iterators use begin() and end().")
+            Q("After std::move(p), a unique_ptr is...", {"Empty and safely destructible", "Use-after-move", "Undefined", "Copied"}, "Moved-from unique_ptrs are empty."),
+            Q("What method upgrades a weak_ptr to a shared_ptr?", {"lock()", "upgrade()", "get()", "share()"}, "weak_ptr.lock() returns shared_ptr or empty."),
+            Q("What is the main advantage of shared_ptr over raw pointer?", {"Automatic deletion when the last owner releases", "Faster access", "Smaller size", "Supports null"}, "Ownership is managed by reference count."),
+            }), "Declare an empty std::weak_ptr<int> named w.", "std::weak_ptr<...> w;",
+            { "std::weak_ptr<int> w;" }, "std::weak_ptr<int> w;")
+            ));
+
+    // ---------------------------------------------------------------- 6: M6
+    T.push_back(MakeTopic("Classes & Object Lifecycles", "Classes",
+        "Encapsulation, constructors/destructors, and the Rule of 3/5/0 with move semantics.",
+        Color{ 100,220,180,255 }, 180,
+        {
+            WithCode(M("Encapsulation & Constructors", {
+                Q("What is the default member access in a class?", {"private", "public", "protected", "internal"}, "class defaults to private (struct defaults to public)."),
+                Q("What is a constructor's name?", {"Same as the class", "init", "new", "construct"}, "The class name, no return type."),
+                Q("Which initializes a member efficiently?", {"A member initializer list in the constructor", "Assignment in the body", "A setter", "A macro"}, "The initializer list constructs in place."),
+            }), "Declare an empty class named Dog (include ;).", "class Name { ... };",
+            {"class Dog { };", "class Dog{};"}, "class Dog { };"),
+
+            WithCode(M("Rule of 3/5/0 & Move", {
+                Q("What does the Rule of Three say?", {"If you define a destructor, copy ctor, or copy assignment, define all three", "Only define destructors", "Never define copy ctors", "Only use move"}, "Consistent resource handling."),
+                Q("What is T&&?", {"An rvalue reference", "A pointer", "A const reference", "An array"}, "Used for move semantics."),
+                Q("What does std::move(x) do?", {"Casts to an rvalue reference", "Deletes x", "Copies x", "Nulls x"}, "It enables move construction or assignment."),
+            }), "Declare a move constructor for class Vec taking Vec&& other (single line, no body).", "Vec(Vec&& o) ...;",
+            {"Vec(Vec&& other) noexcept;", "Vec(Vec&& other);"}, "Vec(Vec&& other) noexcept;"),
+        },
+        WithCode(M("Topic Test", {
+            Q("What does noexcept on a move constructor allow?", {"std::vector to move rather than copy on reallocation", "Faster compilation", "Implicit delete", "Nothing"}, "Containers prefer noexcept move for strong guarantee."),
+            Q("The Rule of Zero says...", {"Prefer types that need no custom copy/move/dtor", "Always write all five", "Only write the destructor", "Never use smart pointers"}, "Let members handle resources."),
+            Q("Copy constructor takes...", {"const T&", "T", "T&&", "T*"}, "Copy from a const ref."),
+            }), "Delete the copy constructor of class Vec (modern C++11 form).", "Vec(const Vec&) = ...;",
+            { "Vec(const Vec&) = delete;", "Vec(const Vec&) = delete" }, "Vec(const Vec&) = delete;")
+            ));
+
+    // ---------------------------------------------------------------- 7: M7
+    T.push_back(MakeTopic("Operator Overloading & Polymorphism", "Operators",
+        "Making custom types respond to operators, and runtime polymorphism with virtual functions.",
+        Color{ 160,140,220,255 }, 230,
+        {
+            WithCode(M("Operator Overloading", {
+                Q("Which operator makes objects printable via std::cout?", {"operator<<", "operator>>", "operator+", "operator()"}, "operator<< for ostream."),
+                Q("Which operator makes obj(x) callable?", {"operator()", "operator[]", "operator*", "operator->"}, "operator() makes a functor."),
+                Q("Which operator makes obj[i] valid?", {"operator[]", "operator()", "operator.", "operator->"}, "operator[] for subscripting."),
+            }), "Declare a member operator+ for Vec taking const Vec& other.", "Vec operator+(...) const;",
+            {"Vec operator+(const Vec& other) const;", "Vec operator+(const Vec& other);"}, "Vec operator+(const Vec& other) const;"),
+
+            WithCode(M("Inheritance & virtual", {
+                Q("How do you inherit publicly?", {"class Dog : public Animal { }", "class Dog extends Animal", "class Dog inherits Animal", "class Dog(public Animal)"}, "Colon + access specifier."),
+                Q("Which keyword enables runtime dispatch?", {"virtual", "abstract", "override", "dynamic"}, "virtual dispatch is resolved at runtime."),
+                Q("Why does a polymorphic base need a virtual destructor?", {"So deleting via base pointer destroys the derived part", "For faster destruction", "Required by constructors", "It is a compiler requirement"}, "Otherwise derived destructor is not called."),
+            }), "Declare a pure virtual void speak() (end with ;).", "virtual void ... = 0;",
+            {"virtual void speak() = 0;", "virtual void speak()=0;"}, "virtual void speak() = 0;"),
+        },
+        WithCode(M("Topic Test", {
+            Q("What does override on a method do?", {"Checks it overrides a base virtual", "Makes it virtual", "Deletes the parent's", "Nothing"}, "override documents and validates intent."),
+            Q("What makes a class abstract?", {"A pure virtual method", "A private constructor", "No methods", "A virtual destructor"}, "Pure virtual = 0."),
+            Q("Which operator is often a non-member?", {"operator<<", "operator=", "operator[]", "operator()"}, "operator<< takes the stream first."),
+            }), "Call the base class's speak() from an overriding method.", "Base::...",
+            { "Animal::speak();", "Base::speak();" }, "Base::speak();")
+            ));
+
+    // ---------------------------------------------------------------- 8: M8
+    T.push_back(MakeTopic("Templates", "Templates",
+        "Function templates, class templates, specialization, and the basics of metaprogramming.",
+        Color{ 220,140,180,255 }, 280,
+        {
+            WithCode(M("Function Templates", {
+                Q("Which declares a template with type T?", {"template <typename T>", "template <T>", "template T", "generic <T>"}, "The typename keyword names the type parameter."),
+                Q("When is a template instantiated?", {"At compile time", "At runtime", "At link time", "Never"}, "The compiler generates concrete code."),
+                Q("Templates avoid...", {"Writing the same code for every type", "Runtime overhead", "Both is fine", "Nothing"}, "Zero-cost genericity."),
+            }), "Declare a template of type T and function T id(T x) (single line, no body).", "template <...> T ...(...)",
+            {"template <typename T> T id(T x);", "template <class T> T id(T x);"}, "template <typename T> T id(T x)"),
+
+            WithCode(M("Class Templates & Specialization", {
+                Q("What does a class template look like?", {"template <typename T> class Box { }", "template class<T> Box", "class Box<T>", "generic class Box"}, "template precedes the class."),
+                Q("What is template specialization?", {"A different implementation for a specific type", "A faster compiler path", "An inline function", "A macro"}, "Customize behavior for T = X."),
+                Q("What is a non-type template parameter?", {"A compile-time value parameter (e.g. int N)", "A reference parameter", "A lambda", "A pointer"}, "template <typename T, int N> allows N."),
+            }), "Declare a class template Box with a type parameter T.", "template <...> class ...",
+            {"template <typename T> class Box", "template <class T> class Box"}, "template <typename T> class Box"),
+        },
+        WithCode(M("Topic Test", {
+            Q("Which is preferred in modern C++?", {"typename", "class", "type", "T"}, "typename is more general; class is legacy."),
+            Q("When are templates compiled?", {"At compile time, once per instantiation", "At runtime, each call", "At link time", "Never"}, "Instantiation happens in the compiler."),
+            Q("What is partial specialization?", {"Customizing a template for a subset of types (e.g. T*)", "A deprecated feature", "Customizing every type", "A macro"}, "Partial specialization narrows the pattern."),
+            }), "Call the template function id with an int argument 5.", "id<...>(...);",
+            { "id<int>(5);", "id(5);" }, "id<int>(5) or id(5)")
+            ));
+
+    // ---------------------------------------------------------------- 9: M9
+    T.push_back(MakeTopic("STL Containers", "Containers",
+        "Sequence, associative, unordered and adapter containers from the standard library.",
+        Color{ 60,180,240,255 }, 330,
+        {
+            WithCode(M("Sequence & Associative", {
+                Q("Which is a dynamic array?", {"std::vector", "std::list", "std::array", "std::deque"}, "vector resizes itself."),
+                Q("Which container stores unique values?", {"std::set", "std::vector", "std::list", "std::deque"}, "set keeps elements unique."),
+                Q("Which stores key-value pairs in sorted order?", {"std::map", "std::vector", "std::unordered_map", "std::set"}, "map keeps keys sorted."),
+            }), "Declare a std::vector<int> named v with {1, 2, 3}.", "std::vector<int> v = { ... };",
+            {"std::vector<int> v = {1, 2, 3};", "std::vector<int> v{1, 2, 3};"}, "std::vector<int> v = {1, 2, 3};"),
+
+            WithCode(M("Unordered & Adapters", {
+                Q("Which is a hash-based map?", {"std::unordered_map", "std::map", "std::vector", "std::set"}, "unordered_map hashes keys."),
+                Q("Which container is FIFO?", {"std::queue", "std::stack", "std::vector", "std::set"}, "queue is first-in, first-out."),
+                Q("Which container is LIFO?", {"std::stack", "std::queue", "std::vector", "std::map"}, "stack is last-in, first-out."),
+            }), "Declare a std::unordered_map<std::string, int> named scores.", "std::unordered_map<...> ...;",
+            {"std::unordered_map<std::string, int> scores;", "unordered_map<string, int> scores;"}, "std::unordered_map<std::string, int> scores;"),
+        },
+        WithCode(M("Topic Test", {
+            Q("Which is O(1) average for lookup?", {"std::unordered_map", "std::map", "std::vector", "std::set"}, "Hash tables give average O(1)."),
+            Q("Which container maintains sorted order?", {"std::map", "std::unordered_map", "std::vector", "std::queue"}, "map sorts by key."),
+            Q("What does priority_queue pop first?", {"The largest by default", "The smallest by default", "The oldest", "The newest"}, "Default uses std::less<T>."),
+            }), "Declare a std::vector<std::string> named names.", "std::vector<...> ...;",
+            { "std::vector<std::string> names;", "vector<string> names;" }, "std::vector<std::string> names;")
+            ));
+
+    // ---------------------------------------------------------------- 10: M10
+    T.push_back(MakeTopic("Iterators & Algorithms", "Algorithms",
+        "Iterators, STL algorithms and lambdas as algorithm callbacks.",
+        Color{ 140,200,220,255 }, 380,
+        {
+            WithCode(M("Iterators", {
+                Q("What does v.begin() return?", {"An iterator to the first element", "The first element", "The vector", "An index"}, "begin() is an iterator."),
+                Q("What does v.end() point to?", {"One past the last element", "The last element", "The first element", "nullptr"}, "end() is past-the-end."),
+                Q("What category is a vector iterator?", {"Random access", "Forward only", "Input only", "Output only"}, "vector iterators are random-access."),
+            }), "Iterate over vector<int> v using an iterator named it (just the for header).", "for (auto it = ...; it != ...; ++it)",
+            {"for (auto it = v.begin(); it != v.end(); ++it)", "for(auto it=v.begin();it!=v.end();++it)"}, "for (auto it = v.begin(); it != v.end(); ++it)"),
+
+            WithCode(M("Algorithms & Lambdas", {
+                Q("Which algorithm sorts?", {"std::sort", "std::order", "std::arrange", "std::heap"}, "std::sort is in <algorithm>."),
+                Q("Which algorithm finds the first matching element?", {"std::find", "std::search_first", "std::get", "std::locate"}, "std::find returns an iterator."),
+                Q("Which begins a lambda?", {"[]", "()", "{}", "<>"}, "[] is the capture list."),
+            }), "Declare a lambda that adds 1 to a number (just the lambda).", "[...](...) { ... }",
+            {"[](int x) { return x + 1; }", "[](int x){return x+1;}"}, "[](int x) { return x + 1; }"),
+        },
+        WithCode(M("Topic Test", {
+            Q("What does std::for_each do?", {"Applies a function to each element", "Sorts the range", "Copies the range", "Finds an element"}, "for_each runs a function per element."),
+            Q("Why pass a lambda by value to std::sort?", {"It's the standard signature and cheap for captures", "It's required", "It copies the container", "It's faster"}, "sort takes a comparator by value."),
+            Q("What does std::transform do?", {"Writes transformed values to another range", "Sorts the range", "Sums the range", "Nothing"}, "transform = map for iterators."),
+            }), "Sort vector<int> v with std::sort.", "std::sort(...);",
+            { "std::sort(v.begin(), v.end());", "sort(v.begin(), v.end());" }, "std::sort(v.begin(), v.end());")
+            ));
+
+    // ---------------------------------------------------------------- 11: M11
+    T.push_back(MakeTopic("Modern Language Features", "Modern",
+        "auto, decltype, structured bindings, constexpr and initializer improvements.",
+        Color{ 180,220,140,255 }, 430,
+        {
+            WithCode(M("Type Deduction", {
+                Q("What does auto do?", {"Deduces the type from the initializer", "Makes it dynamic", "Requires Java", "Makes it global"}, "Compile-time type inference."),
+                Q("What does decltype(expr) yield?", {"The type of expr", "The value of expr", "A pointer", "Nothing"}, "Declares a variable of expr's type."),
+                Q("auto x = 3.14; makes x what?", {"double", "float", "decimal", "auto"}, "Decimal literals default to double."),
+            }), "Declare auto x initialized to 5.", "auto x = ...;",
+            {"auto x = 5;"}, "auto x = 5;"),
+
+            WithCode(M("constexpr & Structured Bindings", {
+                Q("What does constexpr promise?", {"Compile-time evaluation when possible", "Runtime evaluation only", "No side effects", "Immutability"}, "The compiler may evaluate at compile time."),
+                Q("What does auto [a, b] = pair; do?", {"Structured binding of pair.first and pair.second", "Creates a tuple", "Assigns pair to a and b separately", "Nothing"}, "Structured bindings unpack tuples/pairs/structs."),
+                Q("What does {} initialization prevent?", {"Narrowing conversions", "Copies", "Overload resolution", "Lambdas"}, "Brace init rejects narrowing."),
+            }), "Use structured bindings to unpack auto [a, b] from pair p.", "auto [a, b] = ...;",
+            {"auto [a, b] = p;", "auto[a,b]=p;"}, "auto [a, b] = p;"),
+        },
+        WithCode(M("Topic Test", {
+            Q("Which is preferred for variables you never modify?", {"const auto", "auto", "decltype", "register"}, "const makes intent clear."),
+            Q("What does if constexpr do?", {"Compile-time branch selection in templates", "Runtime if", "Throws", "Skips"}, "Compile-time conditional compilation."),
+            Q("What does the range-for require of the range?", {"begin() and end() returning iterators", "A size()", "An operator+", "A copy constructor"}, "Range-for uses begin/end."),
+            }), "Declare a constexpr int named N with value 10.", "constexpr ... = ...;",
+            { "constexpr int N = 10;", "constexpr int N = 10" }, "constexpr int N = 10;")
+            ));
+
+    // ---------------------------------------------------------------- 12: M12
+    T.push_back(MakeTopic("Concurrency & Error Handling", "Concurrent",
+        "Exceptions and exception safety, plus threads, mutexes and atomics.",
+        Color{ 220,120,100,255 }, 480,
+        {
+            WithCode(M("Exceptions", {
+                Q("Which keyword throws an exception?", {"throw", "raise", "emit", "signal"}, "throw."),
+                Q("Which catch syntax catches anything?", {"catch (...)", "catch (all)", "catch (*)", "catch (Exception&)"}, "Ellipsis catches all."),
+                Q("What should custom exceptions inherit from?", {"std::exception or a subclass", "std::error_code", "std::string", "Nothing"}, "Inherit from std::exception."),
+            }), "Throw a std::runtime_error with the message \"bad\".", "throw ...(\"...\");",
+            {"throw std::runtime_error(\"bad\");"}, "throw std::runtime_error(\"bad\");"),
+
+            WithCode(M("Threads & Atomics", {
+                Q("Which header provides std::thread?", {"<thread>", "<concurrency>", "<mutex>", "<atomic>"}, "std::thread is in <thread>."),
+                Q("Which class provides a scoped mutex?", {"std::lock_guard", "std::mutex", "std::atomic", "std::thread"}, "lock_guard locks on construction and unlocks on destruction."),
+                Q("Which type provides lock-free atomic operations on integers?", {"std::atomic<int>", "std::mutex", "std::thread", "volatile int"}, "std::atomic<int> provides atomic reads/writes."),
+            }), "Create a std::thread t that runs the function work().", "std::thread t(...);",
+            {"std::thread t(work);", "std::thread t(work); "}, "std::thread t(work);"),
+        },
+        WithCode(M("Topic Test", {
+            Q("What must you call before a std::thread is destroyed?", {"join() or detach()", "close()", "stop()", "delete"}, "Otherwise std::terminate is called."),
+            Q("What does std::atomic guarantee?", {"Indivisible reads and writes", "Locking", "Ordering between all threads", "A single thread"}, "Atomic operations are indivisible."),
+            Q("What does std::lock_guard do?", {"Locks a mutex in its constructor, unlocks in its destructor", "Locks manually", "Creates a mutex", "Nothing"}, "Scope-based locking."),
+            }), "Wait for thread t to finish before continuing.", "t....()",
+            { "t.join();" }, "t.join();")
             ));
 
     return T;
-}
-
-// ---------------------------------------------------------------------------
+}// ---------------------------------------------------------------------------
 // Python course. Same shape as Java/C++: 8 topics, each with 2 modules + 1
 // test; each module = 3 MC + 1 small code; each test = 3 MC + 1 small code.
 // Content follows the 6-phase Python roadmap:
@@ -741,45 +870,47 @@ inline std::vector<Topic> BuildCppTopics() {
 inline std::vector<Topic> BuildPythonTopics() {
     std::vector<Topic> T;
 
-    // ---------------------------------------------------------------- 1
-    T.push_back(MakeTopic("Python Basics", "Basics", "Your first lines of Python: printing, variables and types.",
+    // ---------------------------------------------------------------- 1: M1
+    T.push_back(MakeTopic("Syntax, Variables & Basic Types", "Basics",
+        "The interpreter, dynamic typing, and Python's core scalar types.",
         Color{ 53,114,165,255 }, 0,
         {
-            WithCode(M("Hello, Python", {
+            WithCode(M("The Interpreter & Print", {
                 Q("Which function prints to the console?", {"print()", "echo()", "console.log()", "printf()"}, "print() is a built-in."),
                 Q("Which file extension do Python scripts use?", {".py", ".pt", ".pyt", ".python"}, ".py."),
-                Q("Which line is a Python comment?", {"# this is a comment", "// this is a comment", "/* this */", "-- this"}, "Python uses #."),
-            }), "Print Hello (use the print function with a quoted string).", "print(...)",
-            {"print(\"Hello\")", "print('Hello')"}, "print(\"Hello\") - text in quotes inside print()."),
+                Q("Which line is a comment in Python?", {"# comment", "// comment", "/* comment */", "-- comment"}, "# starts a comment."),
+            }), "Print Hello using the print function.", "print(...)",
+            {"print(\"Hello\")", "print('Hello')"}, "print(\"Hello\")"),
 
             WithCode(M("Variables & Types", {
-                Q("How do you assign the string 'hi' to x?", {"x = 'hi'", "string x = 'hi'", "let x = 'hi'", "var x := 'hi'"}, "Python has no type keyword."),
+                Q("How do you assign the string 'hi' to x?", {"x = 'hi'", "string x = 'hi'", "let x = 'hi'", "var x := 'hi'"}, "No type keyword."),
                 Q("What does type(3.0) return?", {"<class 'float'>", "<class 'int'>", "<class 'double'>", "float"}, "3.0 is a float."),
-                Q("How do you convert the string '42' to an int?", {"int('42')", "str('42')", "(int)'42'", "cast(42)"}, "int() converts."),
+                Q("Which built-in converts '42' to an int?", {"int('42')", "str('42')", "cast('42')", "toInt('42')"}, "int() converts."),
             }), "Assign the integer 18 to a variable named age.", "name = value",
             {"age = 18"}, "Python assignment is just name = value."),
         },
         WithCode(M("Topic Test", {
-            Q("Which is a valid boolean literal in Python?", {"True", "true", "TRUE", "1b"}, "Capital T."),
+            Q("Which is a boolean literal?", {"True", "true", "TRUE", "1b"}, "Capital T."),
             Q("What does 7 // 2 evaluate to?", {"3", "3.5", "4", "2"}, "// is floor division."),
             Q("Which built-in returns the type of a value?", {"type(x)", "typeof(x)", "class(x)", "kind(x)"}, "type() is the built-in."),
             }), "Print the result of 2 + 3.", "print(...)",
-            { "print(2 + 3)", "print(2+3)" }, "print(2+3) works - print accepts any expression.")
+            { "print(2 + 3)", "print(2+3)" }, "print(2+3) prints the expression's value.")
             ));
 
-    // ---------------------------------------------------------------- 2
-    T.push_back(MakeTopic("Control Flow", "Flow", "Decisions and loops, the Python way.",
+    // ---------------------------------------------------------------- 2: M2
+    T.push_back(MakeTopic("Control Flow & Operators", "Flow",
+        "if/elif/else, for/while loops, and match-case pattern matching.",
         Color{ 80,150,200,255 }, 40,
         {
-            WithCode(M("if / elif / else", {
-                Q("Which keyword adds another condition?", {"elif", "elseif", "else if", "elseif else"}, "elif."),
-                Q("Which is a valid conditional expression?", {"x if cond else y", "cond ? x : y", "if cond then x else y", "x when cond else y"}, "a if c else b form."),
-                Q("Python blocks are defined by...", {"indentation", "curly braces", "begin/end", "semicolons"}, "Whitespace defines blocks."),
+            WithCode(M("Conditionals", {
+                Q("Which keyword adds another condition?", {"elif", "elseif", "else if", "otherwise"}, "elif."),
+                Q("Which is a conditional expression?", {"x if cond else y", "cond ? x : y", "if cond then x else y", "x when cond else y"}, "a if c else b."),
+                Q("Blocks are defined by...", {"indentation", "curly braces", "begin/end", "semicolons"}, "Whitespace defines blocks."),
             }), "Assign 'yes' to s if flag is True, else 'no' (use a conditional expression).", "s = ... if ... else ...",
-            {"s = 'yes' if flag else 'no'", "s = \"yes\" if flag else \"no\""}, "Ternary: a if cond else b"),
+            {"s = 'yes' if flag else 'no'", "s = \"yes\" if flag else \"no\""}, "s = a if cond else b"),
 
             WithCode(M("Loops & match-case", {
-                Q("for i in range(3): runs how many times?", {"3", "2", "4", "Forever"}, "i = 0, 1, 2."),
+                Q("What does range(3) generate?", {"0, 1, 2", "1, 2, 3", "0, 1, 2, 3", "1, 2"}, "range is exclusive on stop."),
                 Q("Which keyword skips to the next iteration?", {"continue", "break", "skip", "next"}, "continue."),
                 Q("When does a loop's else block run?", {"When the loop finishes without break", "Always", "Only if the body is empty", "Only after break"}, "Loop else runs on normal exit."),
             }), "Write a while header that runs while i is less than 5 (include :).", "while ...:",
@@ -787,172 +918,284 @@ inline std::vector<Topic> BuildPythonTopics() {
         },
         WithCode(M("Topic Test", {
             Q("What does range(1, 5) generate?", {"1, 2, 3, 4", "1, 2, 3, 4, 5", "0, 1, 2, 3", "2, 3, 4, 5"}, "Stop is exclusive."),
-            Q("Which keyword introduces pattern matching (3.10+)?", {"match", "switch", "case", "when"}, "match/case."),
+            Q("Which introduces pattern matching (3.10+)?", {"match", "switch", "case", "when"}, "match/case."),
             Q("What is bool([])?", {"False", "True", "0", "Error"}, "Empty containers are falsy."),
-            }), "Write a for header that iterates over range(5) (include :).", "for ... in ...:",
+            }), "Write a for header iterating over range(5) (include :).", "for ... in ...:",
             { "for i in range(5):" }, "for i in range(5):")
             ));
 
-    // ---------------------------------------------------------------- 3
-    T.push_back(MakeTopic("Functions", "Functions", "def, flexible args, lambdas and generators.",
-        Color{ 110,180,200,255 }, 70,
+    // ---------------------------------------------------------------- 3: M3
+    T.push_back(MakeTopic("Core Collections", "Data",
+        "Lists, tuples, dicts and sets - Python's four workhorse types.",
+        Color{ 100,140,200,255 }, 70,
         {
-            WithCode(M("Defining Functions", {
-                Q("Which keyword defines a function?", {"def", "func", "fn", "function"}, "def."),
-                Q("Which syntax collects extra keyword arguments?", {"**kwargs", "*kwargs", "&kwargs", "@kwargs"}, "** collects into a dict."),
-                Q("What does a bare return give back?", {"None", "0", "False", "Error"}, "None."),
-            }), "Define a function square(x) that returns x*x (one line).", "def name(params): return ...",
-            {"def square(x): return x * x", "def square(x): return x*x"}, "def name(params): return ..."),
-
-            WithCode(M("Lambdas, map/filter & Generators", {
-                Q("Which is a valid lambda?", {"lambda x: x + 1", "lambda(x) { return x+1 }", "lambda x -> x+1", "(x) => x+1"}, "lambda args: expr."),
-                Q("What does yield turn a function into?", {"A generator", "A coroutine", "A normal function", "A lambda"}, "yield makes a generator."),
-                Q("What does enumerate(seq) produce?", {"(index, value) pairs", "values only", "indices only", "(value, index) pairs"}, "Indexes come first."),
-            }), "Define a lambda named double that doubles its argument.", "double = lambda x: ...",
-            {"double = lambda x: x * 2", "double = lambda x: 2 * x", "double=lambda x:x*2"}, "lambda x: x*2"),
-        },
-        WithCode(M("Topic Test", {
-            Q("Which order does Python's LEGB scope rule use?", {"Local, Enclosing, Global, Built-in", "Local, External, Global, Base", "List, Env, Global, Built-in", "Local, Error, Getter, Bytecode"}, "LEGB."),
-            Q("Which keyword rebinds a module-level name inside a function?", {"global", "nonlocal", "outer", "module"}, "global."),
-            Q("Which built-in filters a sequence with a predicate?", {"filter", "select", "where", "keep"}, "filter(func, seq)."),
-            }), "Iterate over names with enumerate in a for header (include :).", "for i, x in enumerate(...):",
-            { "for i, name in enumerate(names):" }, "for i, name in enumerate(names):")
-            ));
-
-    // ---------------------------------------------------------------- 4
-    T.push_back(MakeTopic("Data Structures", "Data", "Lists, tuples, dicts, sets and comprehensions.",
-        Color{ 120,190,140,255 }, 100,
-        {
-            WithCode(M("Lists, Tuples, Sets, Dicts", {
+            WithCode(M("Lists & Tuples", {
                 Q("Which of these is mutable?", {"list", "tuple", "str", "frozenset"}, "Lists can change."),
-                Q("Which creates a dict literal?", {"{'a': 1}", "['a', 1]", "('a', 1)", "{'a', 1}"}, "Dicts use key: value."),
-                Q("Which collection stores unique values only?", {"set", "list", "tuple", "deque"}, "Sets reject duplicates."),
+                Q("Which creates a tuple?", {"(1, 2, 3)", "[1, 2, 3]", "{1, 2, 3}", "<1, 2, 3>"}, "Parentheses make a tuple."),
+                Q("Which method adds to the END of a list?", {"append", "push", "insert", "extend"}, "lst.append(x)."),
             }), "Create a list named xs holding 1, 2, 3.", "name = [ ... ]",
             {"xs = [1, 2, 3]", "xs = [1,2,3]"}, "Square brackets make a list."),
 
-            WithCode(M("Comprehensions & Slicing", {
-                Q("What is [x*x for x in range(3)]?", {"[0, 1, 4]", "[1, 4, 9]", "[0, 1, 2]", "[1, 2, 3]"}, "range(3) is 0, 1, 2."),
-                Q("What does s[1:4] return?", {"Elements at indexes 1, 2, 3", "Elements 1..4", "1 to 4", "First 4 elements"}, "Stop is exclusive."),
-                Q("What does 'abcdef'[::-1] return?", {"'fedcba'", "'abcdef'", "'bcdefa'", "''"}, "Step -1 reverses."),
-            }), "Write a list comprehension of x for x in range(5) when x is even.", "[x for x in ... if ...]",
-            {"[x for x in range(5) if x % 2 == 0]", "[x for x in range(5) if x%2==0]"}, "[x for x in range(5) if x % 2 == 0]"),
+            WithCode(M("Dicts & Sets", {
+                Q("Which creates a dict literal?", {"{'a': 1}", "['a', 1]", "('a', 1)", "{'a', 1}"}, "Dicts use key: value."),
+                Q("Which collection stores unique values only?", {"set", "list", "tuple", "deque"}, "Sets reject duplicates."),
+                Q("Which method returns all keys?", {".keys()", ".items()", ".values()", ".all()"}, "dict.keys()."),
+            }), "Create a dict mapping 'a' to 1 and 'b' to 2.", "{ ...: ..., ...: ... }",
+            {"{'a': 1, 'b': 2}", "d = {'a': 1, 'b': 2}"}, "{'a': 1, 'b': 2}"),
         },
         WithCode(M("Topic Test", {
             Q("What does [1, 2, 3][-1] return?", {"3", "1", "Error", "0"}, "Negative indexes count from the end."),
-            Q("Which method adds an item to the end of a list?", {"append", "push", "add", "insert"}, "lst.append(x)."),
-            Q("Which dict method returns all keys?", {".keys()", ".items()", ".values()", ".all()"}, "dict.keys()."),
-            }), "Create a dict mapping 'a' to 1 and 'b' to 2.", "{ ...: ..., ...: ... }",
-            { "{'a': 1, 'b': 2}", "d = {'a': 1, 'b': 2}" }, "{'a': 1, 'b': 2}")
+            Q("Which set operation gives intersection?", {"a & b", "a | b", "a - b", "a ^ b"}, "& is intersection."),
+            Q("Are tuples hashable?", {"Yes, if their elements are hashable", "No", "Only with frozenset", "Only of length 1"}, "Tuples can be dict keys if hashable."),
+            }), "Create a set named s with values 1, 2, 3.", "name = { ... }",
+            { "s = {1, 2, 3}", "s = {1,2,3}" }, "Braces make a set (with no colons).")
             ));
 
-    // ---------------------------------------------------------------- 5
-    T.push_back(MakeTopic("Strings & Files", "Files", "Working with text and reading/writing files safely.",
-        Color{ 200,180,60,255 }, 140,
+    // ---------------------------------------------------------------- 4: M4
+    T.push_back(MakeTopic("Comprehensions & Advanced Slicing", "Compreh",
+        "Concise loops that build collections, plus the full slice syntax.",
+        Color{ 120,150,210,255 }, 100,
         {
-            WithCode(M("Strings", {
-                Q("Which is the modern string interpolation?", {"f'{x}'", "'{}'.format(x)", "'%s' % x", "f'$x'"}, "f-strings."),
-                Q("Are Python strings mutable?", {"No", "Yes", "Only single-char ones", "Only with .upper()"}, "Strings are immutable."),
-                Q("What does 'Hi'.upper() return?", {"'HI'", "'hi'", "'Hi'", "Error"}, "All caps."),
-            }), "Get the length of the string s using the built-in.", "len(...)",
-            {"len(s)"}, "len(s) returns the length."),
+            WithCode(M("Comprehensions", {
+                Q("What does [x*x for x in range(3)] produce?", {"[0, 1, 4]", "[1, 4, 9]", "[0, 1, 2]", "[1, 2, 3]"}, "range(3) is 0, 1, 2."),
+                Q("What does {k: v for k, v in pairs} produce?", {"A dict", "A list", "A set", "A tuple"}, "Dict comprehension."),
+                Q("What does {x for x in seq} produce?", {"A set", "A dict", "A list", "A tuple"}, "Set comprehension."),
+            }), "Write a list comprehension of x for x in range(5) when x is even.", "[x for x in ... if ...]",
+            {"[x for x in range(5) if x % 2 == 0]", "[x for x in range(5) if x%2==0]"}, "[x for x in range(5) if x % 2 == 0]"),
 
-            WithCode(M("File I/O & JSON", {
-                Q("Which is the safe way to open a file?", {"with open('f.txt') as f:", "f = open('f.txt')", "open('f.txt')", "file = fopen('f.txt')"}, "The with block closes it."),
-                Q("Which standard module serializes JSON?", {"json", "csv", "pickle", "os"}, "import json."),
-                Q("Which method reads the entire file into a string?", {"f.read()", "f.readlines()", "f.readline()", "f.read(1)"}, "read() with no args reads all."),
-            }), "Convert the dict d to a JSON string.", "json.???",
-            {"json.dumps(d)", "json.dumps(d);"}, "json.dumps(obj) -> string."),
+            WithCode(M("Slicing", {
+                Q("What does s[1:4] return?", {"Elements at indexes 1, 2, 3", "Elements 1 through 4", "First four elements", "One element"}, "Stop is exclusive."),
+                Q("What does s[::-1] do?", {"Reverses the sequence", "Returns s unchanged", "Returns empty", "Doubles s"}, "Step -1 reverses."),
+                Q("What does s[::2] do?", {"Every second element", "First two elements", "Last two elements", "Skips two"}, "Step 2 selects every other."),
+            }), "Get the last three elements of a list lst.", "lst[...]",
+            {"lst[-3:]", "lst[-3::]"}, "lst[-3:]"),
         },
         WithCode(M("Topic Test", {
-            Q("Which mode opens a file for writing (truncating)?", {"open('f.txt', 'w')", "open('f.txt', 'r')", "open('f.txt', 'a')", "open('f.txt')"}, "'w' truncates."),
-            Q("Which parses a JSON string into Python objects?", {"json.loads(s)", "json.dumps(s)", "json.parse(s)", "json.read(s)"}, "loads = load from string."),
-            Q("Which iterates over a file lazily?", {"for line in f:", "while f.read():", "for line in f.readlines():", "f.read().split()"}, "Iterating the file object."),
-            }), "Split the string s on commas.", "s.???",
-            { "s.split(',')", "s.split(\",\")" }, "s.split(',') returns a list of pieces.")
+            Q("Which comprehension is fastest to write?", {"List comprehension", "map + list", "for loop + append", "filter + list"}, "List comprehensions are idiomatic."),
+            Q("Does a generator expression create a list?", {"No, it yields lazily", "Yes", "Only in Python 3", "Only with list()"}, "(expr for x in it) is a generator."),
+            Q("What does {**a, **b} do?", {"Merges two dicts into a new dict", "Creates a set", "Errors", "Raises"}, "Dict unpacking merge."),
+            }), "Extract every other element of lst starting at 0.", "lst[...]",
+            { "lst[::2]" }, "lst[::2]")
             ));
 
-    // ---------------------------------------------------------------- 6
-    T.push_back(MakeTopic("Classes & OOP", "Classes", "Classes, self, dunder methods and inheritance.",
-        Color{ 220,140,60,255 }, 180,
+    // ---------------------------------------------------------------- 5: M5
+    T.push_back(MakeTopic("Functions & Scope", "Functions",
+        "def, *args/**kwargs, and the LEGB rule.",
+        Color{ 140,170,200,255 }, 140,
+        {
+            WithCode(M("Defining Functions", {
+                Q("Which keyword defines a function?", {"def", "func", "fn", "function"}, "def."),
+                Q("What does a bare return produce?", {"None", "0", "False", "Error"}, "None."),
+                Q("Positional arguments are matched by...", {"Position", "Name", "Type", "Value"}, "Order matters for positional."),
+            }), "Define a function square(x) that returns x*x (one line).", "def name(params): return ...",
+            {"def square(x): return x * x", "def square(x): return x*x"}, "def square(x): return x * x"),
+
+            WithCode(M("*args, **kwargs & Scope", {
+                Q("What does *args collect?", {"Extra positional arguments into a tuple", "Extra keywords into a dict", "A list", "A set"}, "Star collects positional."),
+                Q("What does **kwargs collect?", {"Extra keyword arguments into a dict", "Positional into a tuple", "A list", "A set"}, "Double-star collects keywords."),
+                Q("Which order does LEGB follow?", {"Local, Enclosing, Global, Built-in", "Local, External, Global, Base", "List, Env, Global, Built-in", "Local, Error, Getter, Bytecode"}, "LEGB."),
+            }), "Define a function add that accepts *args and returns their sum.", "def add(*args): return ...",
+            {"def add(*args): return sum(args)"}, "def add(*args): return sum(args)"),
+        },
+        WithCode(M("Topic Test", {
+            Q("Which keyword rebinds a module-level name inside a function?", {"global", "nonlocal", "outer", "module"}, "global."),
+            Q("Which rebinds a name in an enclosing function?", {"nonlocal", "global", "outer", "enclosing"}, "nonlocal."),
+            Q("Can a function have a variable named 'len' inside it?", {"Yes, it shadows the built-in locally", "No", "Only with -X", "Only at module scope"}, "Local scope shadows built-ins."),
+            }), "Call greet with argument 'Ada'.", "greet(...);",
+            { "greet('Ada')", "greet(\"Ada\")" }, "greet('Ada')")
+            ));
+
+    // ---------------------------------------------------------------- 6: M6
+    T.push_back(MakeTopic("Functional Tools & Generators", "Functional",
+        "Lambdas, map/filter/zip/enumerate and generator expressions.",
+        Color{ 160,180,220,255 }, 180,
+        {
+            WithCode(M("Lambdas & Built-ins", {
+                Q("Which is a valid lambda?", {"lambda x: x + 1", "lambda(x) { return x+1; }", "lambda x -> x+1", "(x) => x+1"}, "lambda args: expr."),
+                Q("What does map(f, seq) produce?", {"An iterator of f(x) for each x", "A list", "A tuple", "A set"}, "map returns an iterator in Python 3."),
+                Q("What does enumerate(seq) yield?", {"(index, value) pairs", "values only", "indices only", "(value, index) pairs"}, "Indexes come first."),
+            }), "Create a lambda named double that doubles its argument.", "double = lambda x: ...",
+            {"double = lambda x: x * 2", "double = lambda x: 2 * x", "double=lambda x:x*2"}, "lambda x: x * 2"),
+
+            WithCode(M("Generators", {
+                Q("What does yield do?", {"Pauses the function and produces a value", "Exits the function", "Returns None", "Prints the value"}, "yield makes a generator."),
+                Q("Are generators lazy?", {"Yes, they produce values on demand", "No, they build a list", "Only in Python 2", "Only with map()"}, "Generators are lazy."),
+                Q("Which built-in filters a sequence with a predicate?", {"filter", "select", "where", "keep"}, "filter(func, seq)."),
+            }), "Write a generator function counter() that yields 0, 1, 2.", "def name(): yield ...",
+            {"def counter():\n    yield 0\n    yield 1\n    yield 2", "def counter(): yield 0; yield 1; yield 2"}, "Generator functions use yield."),
+        },
+        WithCode(M("Topic Test", {
+            Q("Which function zips two sequences?", {"zip", "pair", "combine", "join"}, "zip(a, b)."),
+            Q("What does zip() return in Python 3?", {"An iterator of tuples", "A list of tuples", "A dict", "A single tuple"}, "zip is lazy."),
+            Q("Can a generator be iterated twice?", {"No, only once", "Yes, freely", "Only with list()", "Only in async"}, "Generators exhaust."),
+            }), "Iterate over names with enumerate in a for header (include :).", "for ... in enumerate(...):",
+            { "for i, name in enumerate(names):" }, "for i, name in enumerate(names):")
+            ));
+
+    // ---------------------------------------------------------------- 7: M7
+    T.push_back(MakeTopic("Classes & Objects", "Classes",
+        "class, __init__, self, instance vs class variables.",
+        Color{ 180,200,220,255 }, 230,
         {
             WithCode(M("Classes & __init__", {
                 Q("Which method is the constructor?", {"__init__", "__new__", "__ctor__", "init"}, "__init__."),
-                Q("What is the first parameter of instance methods?", {"self", "this", "cls", "me"}, "self."),
-                Q("How do you create a Dog object?", {"Dog()", "new Dog()", "Dog", "create Dog"}, "Call the class."),
+                Q("What is the first parameter of an instance method?", {"self", "this", "cls", "me"}, "self."),
+                Q("How do you create a Dog object?", {"Dog()", "new Dog()", "Dog", "create Dog"}, "Calling the class instantiates it."),
             }), "Write the __init__ header for class Dog taking self and name (include :).", "def __init__(...):",
-            {"def __init__(self, name):", "def __init__(self,name):"}, "def __init__(self, ...):"),
+            {"def __init__(self, name):", "def __init__(self,name):"}, "def __init__(self, name):"),
 
-            WithCode(M("Inheritance & Dunder", {
+            WithCode(M("Instance vs Class Variables", {
+                Q("Where does a class variable live?", {"On the class, shared across instances", "On each instance", "In __init__ only", "In the module"}, "Class variables are shared."),
+                Q("Where does an instance variable live?", {"On the object, set via self", "On the class", "In globals", "In __dict__ of the module"}, "Instance attributes are per-object."),
+                Q("What does @classmethod change about the first param?", {"It receives the class (cls) instead of the instance", "It receives nothing", "It receives the module", "It makes it async"}, "Classmethods take cls."),
+            }), "Declare a class-level constant name = 'dog' inside class Dog (single line).", "name = ...",
+            {"name = 'dog'", "name = \"dog\""}, "name = 'dog'"),
+        },
+        WithCode(M("Topic Test", {
+            Q("How do you call a method on obj?", {"obj.method()", "method(obj)", "obj.method", "obj->method()"}, "obj.method()."),
+            Q("What does @staticmethod mean?", {"The method receives neither self nor cls", "It receives the class", "It receives the instance", "It is deprecated"}, "Static methods take no implicit first arg."),
+            Q("What does __dict__ hold?", {"Instance attributes", "Class attributes only", "Methods only", "The module"}, "Instances store attributes in __dict__."),
+            }), "Create a Dog object named d.", "d = ...()",
+            { "d = Dog()" }, "d = Dog()")
+            ));
+
+    // ---------------------------------------------------------------- 8: M8
+    T.push_back(MakeTopic("Advanced OOP & Dunder Methods", "OOP",
+        "Dunder methods, inheritance/super(), properties and name mangling.",
+        Color{ 200,180,200,255 }, 280,
+        {
+            WithCode(M("Dunder Methods", {
+                Q("Which method customizes str(obj)?", {"__str__", "__repr__", "__print__", "str"}, "__str__."),
+                Q("Which method customizes len(obj)?", {"__len__", "__size__", "__length__", "len"}, "__len__."),
+                Q("Which method customizes obj == other?", {"__eq__", "__cmp__", "__same__", "__match__"}, "__eq__."),
+            }), "Write the header of a __str__ method (include :).", "def __str__(...):",
+            {"def __str__(self):"}, "def __str__(self):"),
+
+            WithCode(M("Inheritance & Properties", {
                 Q("How do you inherit from Animal?", {"class Dog(Animal):", "class Dog extends Animal:", "class Dog : Animal {", "class Dog inherits Animal:"}, "Parentheses after the class name."),
                 Q("What does super().__init__() do?", {"Calls the parent's constructor", "Makes it final", "Creates a subclass", "Deletes the parent"}, "super() reaches the parent."),
-                Q("Which method customizes str(obj)?", {"__str__", "__repr__", "__print__", "str"}, "__str__."),
-            }), "Call the parent class's speak() method from a child method.", "super()...",
+                Q("What decorator makes a method a getter?", {"@property", "@getter", "@staticmethod", "@field"}, "@property."),
+            }), "Call the parent class's speak() from a child method.", "super()...",
             {"super().speak()"}, "super().speak()"),
         },
         WithCode(M("Topic Test", {
-            Q("Which decorator makes a method a getter?", {"@property", "@getter", "@staticmethod", "@field"}, "@property."),
-            Q("What does name mangling do to __x inside class C?", {"Renames it to _C__x", "Makes it public", "Deletes it", "Nothing"}, "Used for collision avoidance."),
-            Q("Which method customizes len(obj)?", {"__len__", "__size__", "__length__", "len"}, "__len__."),
-            }), "Write the header of a __str__ method (include :).", "def __str__(...):",
-            { "def __str__(self):" }, "def __str__(self):")
+            Q("What does __repr__ aim to do?", {"Provide an unambiguous, ideally eval-able string", "Print pretty", "Compare objects", "Hash the object"}, "repr is for debugging."),
+            Q("What does name mangling do to __x inside class C?", {"Renames it to _C__x", "Makes it public", "Deletes it", "Nothing"}, "Avoids accidental inheritance clashes."),
+            Q("What is MRO?", {"Method Resolution Order for multiple inheritance", "A decorator", "A built-in", "An exception"}, "MRO defines lookup order."),
+            }), "Define a property getter for a name attribute (decorator only).", "@property",
+            { "@property" }, "@property")
             ));
 
-    // ---------------------------------------------------------------- 7
-    T.push_back(MakeTopic("Exceptions & Modules", "Errors", "try/except, decorators, context managers and the stdlib.",
-        Color{ 220,90,90,255 }, 230,
+    // ---------------------------------------------------------------- 9: M9
+    T.push_back(MakeTopic("Exception Handling", "Errors",
+        "try/except/else/finally and custom exception classes.",
+        Color{ 220,140,140,255 }, 330,
         {
-            WithCode(M("Exceptions", {
+            WithCode(M("try / except / else / finally", {
                 Q("Which block always runs, error or not?", {"finally", "except", "try", "else"}, "finally."),
                 Q("Which keyword raises an exception?", {"raise ValueError('bad')", "throw ValueError", "raise(ValueError)", "error ValueError"}, "raise."),
-                Q("A custom exception usually subclasses...", {"Exception", "Error", "BaseException", "object"}, "Subclass Exception."),
+                Q("When does try's else block run?", {"No exception was raised", "Exception was raised", "Always", "Never"}, "else runs on success."),
             }), "Raise a ValueError with the message 'bad'.", "raise ...('...')",
             {"raise ValueError('bad')", "raise ValueError(\"bad\")"}, "raise ValueError('bad')"),
 
-            WithCode(M("Decorators & Context Managers", {
-                Q("What does @decorator above def f do?", {"Passes f through decorator and rebinds it", "Renames f", "Removes f", "Prints f"}, "Decorators wrap functions."),
+            WithCode(M("Custom Exceptions", {
+                Q("What should custom exceptions subclass?", {"Exception", "Error", "BaseException", "object"}, "Subclass Exception."),
+                Q("Which exception should you normally NOT catch?", {"BaseException", "Exception", "ValueError", "TypeError"}, "BaseException includes KeyboardInterrupt/SystemExit."),
+                Q("What does the with statement use to signal errors?", {"Exceptions raised inside the with block", "A return code", "A sentinel", "Nothing"}, "Exceptions propagate normally."),
+            }), "Define a custom exception class named MyError.", "class Name(Exception): ...",
+            {"class MyError(Exception): pass", "class MyError(Exception):\n    pass"}, "class MyError(Exception): pass"),
+        },
+        WithCode(M("Topic Test", {
+            Q("What does re-raising do?", {"Propagates an exception to the caller", "Swallows it", "Logs it", "Deletes it"}, "raise in an except block."),
+            Q("Which clause can add a condition to an except?", {"None - use subclassing", "if", "when", "where"}, "Use a more specific exception or inspect in the block."),
+            Q("What does traceback show?", {"The chain of calls leading to the exception", "The message only", "The type only", "Nothing"}, "traceback shows the call chain."),
+            }), "Catch a ValueError as e.", "except ... as ...:",
+            { "except ValueError as e:", "except ValueError as e" }, "except ValueError as e:")
+            ));
+
+    // ---------------------------------------------------------------- 10: M10
+    T.push_back(MakeTopic("Decorators & Context Managers", "Decorators",
+        "First-class functions, closures, @decorator, and the with protocol.",
+        Color{ 200,120,120,255 }, 380,
+        {
+            WithCode(M("Decorators", {
+                Q("What does @decorator above def f do?", {"Passes f through decorator and rebinds the name", "Renames f", "Deletes f", "Prints f"}, "Decorators wrap functions."),
                 Q("Which module provides functools.wraps?", {"functools", "builtins", "decorators", "itertools"}, "from functools import wraps."),
-                Q("Which method runs when a with-block is entered?", {"__enter__", "__init__", "__with__", "__open__"}, "__enter__."),
-            }), "Open 'f.txt' for reading using a with statement (header, include :).", "with open(...) as ...:",
+                Q("What do closures capture?", {"Their enclosing scope's variables", "Nothing", "Only globals", "Only their own arguments"}, "Closures remember their lexical environment."),
+            }), "Decorate a function f with @wraps.", "@...",
+            {"@wraps(f)", "@wraps(f)"}, "@wraps(f)"),
+
+            WithCode(M("Context Managers", {
+                Q("Which method runs when entering a with-block?", {"__enter__", "__init__", "__with__", "__open__"}, "__enter__."),
+                Q("Which method runs on exit?", {"__exit__", "__del__", "__close__", "__finally__"}, "__exit__."),
+                Q("What does __exit__ receive?", {"Exception type, value and traceback", "Nothing", "The block's return", "Only the exception message"}, "__exit__(exc_type, exc, tb)."),
+            }), "Open 'f.txt' for reading using a with statement (header only).", "with open(...) as ...:",
             {"with open('f.txt') as f:", "with open(\"f.txt\") as f:"}, "with open('f.txt') as f:"),
         },
         WithCode(M("Topic Test", {
-            Q("Which except clause catches every exception cleanly?", {"except Exception as e:", "except:", "catch(Exception):", "catch all:"}, "Bare except swallows everything; prefer Exception."),
-            Q("When does try/except's else block run?", {"No exception was raised", "Exception was raised", "Always", "Never"}, "else runs when try succeeded."),
-            Q("A context manager needs which two methods?", {"__enter__ and __exit__", "__init__ and __del__", "__with__ and __done__", "__open__ and __close__"}, "Enter/exit protocol."),
+            Q("What does @contextmanager from contextlib do?", {"Turns a generator into a context manager", "Adds __enter__/__exit__", "Both are correct", "Nothing"}, "It wraps a generator yielding once."),
+            Q("Why use functools.wraps on a decorator's inner function?", {"Preserves the wrapped function's name and docstring", "For speed", "For type-checking", "Required"}, "Preserves metadata."),
+            Q("Is a decorator a callable?", {"Yes", "No", "Only classes", "Only functions"}, "Decorators are callables that return callables."),
             }), "Import wraps from functools.", "from ??? import ???",
             { "from functools import wraps" }, "from functools import wraps")
             ));
 
-    // ---------------------------------------------------------------- 8
-    T.push_back(MakeTopic("Pythonic Code", "Pythonic", "Stdlib gems, idioms and readable code.",
-        Color{ 160,90,200,255 }, 280,
+    // ---------------------------------------------------------------- 11: M11
+    T.push_back(MakeTopic("File I/O & Serialization", "Files",
+        "with open(), json and csv from the standard library.",
+        Color{ 180,100,100,255 }, 430,
         {
-            WithCode(M("Standard Library Power", {
-                Q("Which collections class counts items?", {"collections.Counter", "collections.Count", "collections.Tally", "collections.Histogram"}, "Counter."),
-                Q("Which pathlib class represents a filesystem path?", {"pathlib.Path", "pathlib.File", "pathlib.Dir", "pathlib.FsPath"}, "Path."),
-                Q("Which itertools helper cycles forever?", {"itertools.cycle", "itertools.loop", "itertools.repeat", "itertools.wrap"}, "cycle."),
+            WithCode(M("File Reading & Writing", {
+                Q("What is the safe way to open a file?", {"with open(...) as f:", "f = open(...)", "open(...)", "file = fopen(...)"}, "The with block closes it."),
+                Q("Which mode truncates the file?", {"'w'", "'r'", "'a'", "'x'"}, "'w' truncates."),
+                Q("Which method reads the entire file into a string?", {"f.read()", "f.readlines()", "f.readline()", "f.read(1)"}, "read() with no args reads all."),
+            }), "Read the entire text file 'data.txt' into a string s.", "s = open(...).read()",
+            {"with open('data.txt') as f: s = f.read()", "s = open('data.txt').read()"}, "with open('data.txt') as f: s = f.read()"),
+
+            WithCode(M("JSON & CSV", {
+                Q("Which module serializes JSON?", {"json", "csv", "pickle", "os"}, "import json."),
+                Q("Which function converts a dict to a JSON string?", {"json.dumps(d)", "json.loads(d)", "json.to_string(d)", "json.encode(d)"}, "dumps = dump string."),
+                Q("Which function reads a JSON file?", {"json.load(f)", "json.loads(f)", "json.read(f)", "json.parse(f)"}, "load reads from a file."),
+            }), "Parse the JSON string txt into a Python object.", "json....(txt)",
+            {"json.loads(txt)"}, "json.loads(txt)"),
+        },
+        WithCode(M("Topic Test", {
+            Q("Which iterates over a file lazily?", {"for line in f:", "while f.read():", "for line in f.readlines():", "f.read().split()"}, "Iterating the file object."),
+            Q("What does csv.reader return?", {"An iterator of rows (lists of strings)", "A list of dicts", "A dict", "A string"}, "Rows are lists of strings."),
+            Q("Which mode opens a file for binary reading?", {"'rb'", "'r'", "'b'", "'rb+'"}, "'rb' is read-binary."),
+            }), "Convert the dict d to a JSON string.", "json....(d)",
+            { "json.dumps(d)" }, "json.dumps(d)")
+            ));
+
+    // ---------------------------------------------------------------- 12: M12
+    T.push_back(MakeTopic("Essential Standard Library", "Stdlib",
+        "pathlib, os, datetime, math, collections and itertools.",
+        Color{ 160,80,80,255 }, 480,
+        {
+            WithCode(M("Path & OS", {
+                Q("Which module provides Path?", {"pathlib", "os", "sys", "fileio"}, "from pathlib import Path."),
+                Q("Which module reads command-line args?", {"sys", "os", "argparse", "cli"}, "sys.argv."),
+                Q("Which pathlib method joins paths?", {"the / operator", "+", "join()", "concat()"}, "Path('a') / 'b'."),
             }), "Import Path from pathlib.", "from ??? import ???",
             {"from pathlib import Path"}, "from pathlib import Path"),
 
-            WithCode(M("Idioms", {
-                Q("What does a, b = (1, 2) do?", {"Sets a=1, b=2", "Sets a=2, b=1", "Sets a=(1,2)", "Raises an error"}, "Tuple unpacking."),
-                Q("What does the walrus := do?", {"Assigns inside an expression", "Compares two values", "Type-checks a value", "Creates a set"}, "Assignment expression."),
-                Q("What is the Pythonic way to swap a and b?", {"a, b = b, a", "temp = a; a = b; b = temp", "swap(a, b)", "a = b; b = a"}, "Tuple unpack."),
-            }), "Swap a and b using tuple unpacking.", "... , ... = ..., ...",
-            {"a, b = b, a", "a,b=b,a"}, "a, b = b, a"),
+            WithCode(M("Time, Math & Data Utilities", {
+                Q("Which module handles dates and times?", {"datetime", "time", "calendar", "date"}, "import datetime."),
+                Q("Which function computes square roots?", {"math.sqrt", "math.root", "math.pow", "math.square"}, "math.sqrt."),
+                Q("Which collections class counts occurrences?", {"collections.Counter", "collections.Count", "collections.Tally", "collections.Histogram"}, "Counter."),
+            }), "Create a Counter from the list words.", "Counter(...)",
+            {"Counter(words)", "from collections import Counter; Counter(words)"}, "Counter(words)"),
         },
         WithCode(M("Topic Test", {
-            Q("Which returns the sum of the list xs?", {"sum(xs)", "xs.sum()", "total(xs)", "reduce(xs)"}, "sum()."),
-            Q("Which returns a NEW sorted list (leaving xs intact)?", {"sorted(xs)", "xs.sort()", "order(xs)", "sort(xs)"}, "sorted() returns a new list; .sort() sorts in place."),
-            Q("What is `1 if True else 2`?", {"1", "2", "True", "Error"}, "True chooses the first branch."),
-            }), "Iterate over names and ages together with zip (for header, include :).", "for x, y in zip(...):",
-            { "for n, a in zip(names, ages):" }, "for n, a in zip(names, ages):")
+            Q("Which collections class supplies a default for missing keys?", {"collections.defaultdict", "collections.Counter", "dict.default", "collections.Dict"}, "defaultdict factory."),
+            Q("Which itertools function chains iterables?", {"itertools.chain", "itertools.join", "itertools.concat", "itertools.combine"}, "chain(a, b) chains."),
+            Q("Which datetime class represents a timezone-aware timestamp?", {"datetime.datetime", "datetime.date", "datetime.time", "datetime.timestamp"}, "datetime is the standard."),
+            }), "Import chain from itertools.", "from ??? import ???",
+            { "from itertools import chain" }, "from itertools import chain")
             ));
 
     return T;
-}
-
-// ---------------------------------------------------------------------------
+}// ---------------------------------------------------------------------------
 // C# course. Same shape as Java/C++/Python: 8 topics, each with 2 modules + 1
 // test; each module = 3 MC + 1 small code; each test = 3 MC + 1 small code.
 // Content follows the 5-phase .NET roadmap:
@@ -965,92 +1208,96 @@ inline std::vector<Topic> BuildPythonTopics() {
 inline std::vector<Topic> BuildCSharpTopics() {
     std::vector<Topic> T;
 
-    // ---------------------------------------------------------------- 1
-    T.push_back(MakeTopic("C# Basics", "Basics", "CLR, value vs reference types, var, and nullable references.",
+    // ---------------------------------------------------------------- 1: M1
+    T.push_back(MakeTopic("Basic Syntax & Types", "Basics",
+        "CLR, value vs. reference types, var, and nullable references.",
         Color{ 155,79,150,255 }, 0,
         {
-            WithCode(M("Hello, C#", {
-                Q("Which method prints a line to the console?", {"Console.WriteLine(\"Hi\");", "print(\"Hi\");", "printf(\"Hi\");", "System.out.println(\"Hi\");"}, "Console.WriteLine prints a line."),
-                Q("Which file extension do C# source files use?", {".cs", ".c#", ".csx", ".sharp"}, ".cs is standard."),
-                Q("What does CLR stand for?", {"Common Language Runtime", "C# Language Runtime", "Central Language Runtime", "Core Level Runtime"}, "The CLR is .NET's virtual machine."),
-            }), "Write a statement that prints Hello using Console.WriteLine.", "Console.WriteLine(...);",
-            {"Console.WriteLine(\"Hello\");"}, "Console.WriteLine prints and adds a newline."),
-
-            WithCode(M("Value vs Reference Types", {
-                Q("Which of these is a value type?", {"int", "string", "List<int>", "object"}, "Primitives like int are value types."),
-                Q("Which of these is a reference type?", {"object", "int", "bool", "char"}, "object is the root reference type."),
-                Q("What does the ? on string? mean?", {"Nullable reference type", "Optional field", "Static string", "Read-only string"}, "The compiler warns on possible null dereference."),
-            }), "Declare an integer variable x with value 5.", "int name = value;",
+            WithCode(M("The Runtime & Types", {
+                Q("What does CLR stand for?", {"Common Language Runtime", "C# Language Runtime", "Central Language Runtime", "Core Level Runtime"}, "CLR is .NET's virtual machine."),
+                Q("Which is a value type?", {"int", "string", "List<int>", "object"}, "Primitives are value types."),
+                Q("Which is a reference type?", {"object", "int", "bool", "char"}, "object is the root reference type."),
+            }), "Declare an int x and set it to 5.", "int name = value;",
             {"int x = 5;"}, "int x = 5;"),
+
+            WithCode(M("var & Nullability", {
+                Q("What does var require?", {"An initializer", "A type annotation", "A public modifier", "A static modifier"}, "var infers from the initializer."),
+                Q("What does string? signal?", {"A nullable reference type", "An optional field", "A static string", "A read-only string"}, "NRT: compiler warns on possible null."),
+                Q("Which declares a nullable int?", {"int? x = null;", "int x = null;", "Nullable<int>? x;", "int x?;"}, "int? is shorthand for Nullable<int>."),
+            }), "Print Hello using Console.WriteLine.", "Console.WriteLine(...);",
+            {"Console.WriteLine(\"Hello\");"}, "Console.WriteLine(\"Hello\");"),
         },
         WithCode(M("Topic Test", {
-            Q("What must `var` always have?", {"An initializer", "A type annotation", "A public modifier", "A static modifier"}, "var requires an initializer so the compiler can infer the type."),
-            Q("Which declares a nullable int?", {"int? x = null;", "int x = null;", "int x? = null;", "nullable<int> x = null;"}, "int? is shorthand for Nullable<int>."),
-            Q("What is CIL?", {"Common Intermediate Language", "C# Intermediate Language", "Compiled Intermediate Layer", "Core Interop Library"}, "Assemblies contain CIL, which the JIT compiles."),
+            Q("What is CIL?", {"Common Intermediate Language", "C# Intermediate Language", "Compiled Intermediate Layer", "Core Interop Library"}, "Assemblies contain CIL; JIT compiles it."),
+            Q("How is var different from dynamic?", {"var is compile-time; dynamic is runtime", "They are the same", "dynamic is faster", "var is deprecated"}, "var is inferred; dynamic is late-bound."),
+            Q("Where do value-type locals live?", {"On the stack", "On the heap", "In static storage", "In registers only"}, "Value types are stack-allocated when local."),
             }), "Print the result of 2 + 3.", "Console.WriteLine(...)",
-            { "Console.WriteLine(2 + 3);", "Console.WriteLine(2+3);" }, "Console.WriteLine accepts any expression.")
+            { "Console.WriteLine(2 + 3);", "Console.WriteLine(2+3);" }, "Console.WriteLine(2 + 3);")
             ));
 
-    // ---------------------------------------------------------------- 2
-    T.push_back(MakeTopic("Control Flow & Loops", "Flow", "if, switch expressions, loops and pattern matching.",
+    // ---------------------------------------------------------------- 2: M2
+    T.push_back(MakeTopic("Control Flow & Pattern Matching", "Flow",
+        "if/else, switch expressions, loops, and C#'s pattern matching.",
         Color{ 175,89,180,255 }, 40,
         {
-            WithCode(M("if / else & switch", {
-                Q("Which is valid C#?", {"if (x > 5) { }", "if x > 5 then { }", "if (x > 5) then { }", "if x > 5 { }"}, "Conditions go in parentheses."),
+            WithCode(M("Conditionals & switch", {
                 Q("Which is the modern switch style?", {"value switch { ... }", "switch(value) return", "case (value)", "match-case"}, "C# 8+ switch expressions."),
-                Q("Which label handles no matching case?", {"default:", "else:", "otherwise:", "case none:"}, "default: is the fallback."),
-            }), "Print \"big\" if x is greater than 10 (one-line if).", "if (...) Console.WriteLine(...);",
+                Q("Which is valid C#?", {"if (x > 5) { }", "if x > 5 then { }", "if (x > 5) then { }", "if x > 5 { }"}, "Conditions go in parentheses."),
+                Q("Which is the default label in a switch statement?", {"default:", "else:", "otherwise:", "case none:"}, "default: is the fallback."),
+            }), "Print \"big\" if x > 10 (one-line if).", "if (...) Console.WriteLine(...);",
             {"if (x > 10) Console.WriteLine(\"big\");", "if(x>10)Console.WriteLine(\"big\");"}, "A single if around Console.WriteLine."),
 
             WithCode(M("Loops & Pattern Matching", {
-                Q("What does foreach iterate over?", {"Any IEnumerable", "Only arrays", "Only lists", "Only strings"}, "foreach works over anything enumerable."),
+                Q("What does foreach iterate over?", {"Any IEnumerable", "Only arrays", "Only lists", "Only strings"}, "foreach works over IEnumerable."),
                 Q("Which loop runs its body at least once?", {"do-while", "while", "for", "foreach"}, "do-while checks after the body."),
                 Q("Which keyword pattern-matches and binds a variable?", {"is", "as", "in", "let"}, "is (pattern) binds within a scope."),
-            }), "Write the header of a while loop that runs while i is less than 5 (include the opening brace).", "while (...) {",
+            }), "Write the header of a while loop that runs while i < 5 (include opening brace).", "while (...) {",
             {"while (i < 5) {", "while(i<5){"}, "while (condition) { ... }"),
         },
         WithCode(M("Topic Test", {
             Q("What does break do?", {"Exits the loop immediately", "Skips to the next iteration", "Restarts the loop", "Exits the program"}, "break leaves the loop."),
-            Q("Which is a switch-expression syntax?", {"result = value switch { ... };", "result = switch(value) { ... };", "switch result = value { ... };", "match(value) { ... }"}, "value switch { patterns -> results }."),
-            Q("What does continue do?", {"Skips to the next iteration", "Exits the loop", "Throws an exception", "Restarts the loop"}, "continue jumps to the next pass."),
-            }), "Write the header of a for loop counting i = 0..9 (include the opening brace).", "for (...; ...; ...) {",
+            Q("Which pattern tests a property value?", {"obj is { Age: > 18 }", "obj.Age > 18", "when obj.Age", "match Age > 18"}, "Property patterns bind and check."),
+            Q("Which operator tests a type safely?", {"is", "as", "typeof", "cast"}, "is returns bool; as returns null on failure."),
+            }), "Write a for loop header counting i = 0..9 (include opening brace).", "for (...; ...; ...) {",
             { "for (int i = 0; i < 10; i++) {", "for(int i=0;i<10;i++){" }, "for (init; cond; step) {")
             ));
 
-    // ---------------------------------------------------------------- 3
-    T.push_back(MakeTopic("Methods", "Methods", "Strings, StringBuilder, interpolation, overloading and ref.",
+    // ---------------------------------------------------------------- 3: M3
+    T.push_back(MakeTopic("Strings & Text Handling", "Strings",
+        "Immutability, StringBuilder, interpolation and raw string literals.",
         Color{ 195,99,190,255 }, 70,
         {
-            WithCode(M("Strings & Interpolation", {
-                Q("Which prefix enables string interpolation?", {"$", "@", "#", "%"}, "The $ prefix."),
+            WithCode(M("String Manipulation", {
                 Q("Are C# strings mutable?", {"No", "Yes", "Only with StringBuilder", "Only ASCII ones"}, "Strings are immutable."),
-                Q("Which class builds strings efficiently?", {"StringBuilder", "String", "StringBuffer", "TextBuilder"}, "System.Text.StringBuilder."),
-            }), "Create a string s that interpolates 'Hello, ' followed by the variable name.", "$\"Hello, {name}\"",
+                Q("Which prefix enables interpolation?", {"$", "@", "#", "%"}, "The $ prefix."),
+                Q("Which class builds strings efficiently?", {"StringBuilder", "String", "TextBuilder", "StringBuffer"}, "StringBuilder from System.Text."),
+            }), "Create a string s that interpolates 'Hello, ' + the variable name.", "$...{...}...",
             {"string s = $\"Hello, {name}\";", "string s = $\"Hello, {name}\""}, "$\"Hello, {name}\""),
 
-            WithCode(M("Methods & Modifiers", {
-                Q("Which return type means 'returns nothing'?", {"void", "null", "None", "empty"}, "void."),
-                Q("Method overloading requires...", {"Different parameter lists", "Different return types only", "Different names", "Different access modifiers"}, "Overloads differ by signature."),
-                Q("What does the ref keyword do?", {"Passes the argument by reference", "Makes it read-only", "Creates a copy", "Deletes the argument"}, "ref shares the caller's variable."),
-            }), "Define a public static method Square that takes int x and returns x*x (one line).", "public static int ...(int x) { ... }",
-            {"public static int Square(int x) { return x * x; }", "public static int Square(int x){return x*x;}"}, "public static int Square(int x) { return x * x; }"),
+            WithCode(M("Raw & Verbatim Strings", {
+                Q("Which prefix disables escape sequences?", {"@", "$", "#", "~"}, "@\"...\""),
+                Q("What is a raw string literal (C# 11+)?", {"\"\"\"...\"\"\"", "@\"...\"", "$...$", "'...'"}, "Triple quotes make a raw literal."),
+                Q("What does .Length return?", {"Number of characters", "Number of words", "Number of bytes", "The string itself"}, "Length is the character count."),
+            }), "Get the length of the string s.", "s....",
+            {"s.Length"}, "s.Length (a property, no parentheses)"),
         },
         WithCode(M("Topic Test", {
-            Q("What does s.Length return?", {"Number of characters", "Number of words", "Number of bytes", "The string itself"}, "Length is the character count."),
-            Q("Which is a raw string literal (C# 11+)?", {"\"\"\"...\"\"\"", "@\"...\"", "$...$", "'...'"}, "Triple quotes form a raw literal."),
             Q("What does ToUpper() return?", {"A new uppercase string", "Mutates in place", "A bool", "The original string"}, "Strings are immutable - a new string is returned."),
-            }), "Call the greet method with no arguments (end with ;).", "greet...;",
-            { "greet();" }, "method(args);")
+            Q("What does string.Join do?", {"Concatenates strings with a separator", "Splits the string", "Replaces substrings", "Removes whitespace"}, "Join(sep, items)."),
+            Q("What does string.IsNullOrEmpty(s) check?", {"Null or zero-length", "Null only", "Empty only", "Whitespace"}, "Covers both null and empty."),
+            }), "Split the string s on commas.", "s.Split(...)",
+            { "s.Split(',')", "s.Split(\",\")" }, "s.Split(',')")
             ));
 
-    // ---------------------------------------------------------------- 4
-    T.push_back(MakeTopic("Classes & Objects", "Classes", "Auto-properties, structs and records.",
+    // ---------------------------------------------------------------- 4: M4
+    T.push_back(MakeTopic("Classes, Structs & Records", "Classes",
+        "Classes with auto-properties, performance structs, and value-based records.",
         Color{ 215,109,190,255 }, 100,
         {
             WithCode(M("Classes & Properties", {
                 Q("Which is an auto-property?", {"public int Age { get; set; }", "public int Age;", "public int get_Age() { }", "public Age { }"}, "The compiler generates a backing field."),
                 Q("What is the default member access inside a class?", {"private", "public", "protected", "internal"}, "Class members default to private."),
-                Q("A constructor's name is...", {"The class name", "init", "new", "construct"}, "Same as the class, no return type."),
+                Q("What does internal mean?", {"Accessible within the same assembly", "Accessible everywhere", "Accessible in subclasses", "Private to the class"}, "internal = same assembly only."),
             }), "Declare an empty class named Dog.", "class Name { ... }",
             {"class Dog { }", "class Dog{}"}, "class Dog { }"),
 
@@ -1062,67 +1309,70 @@ inline std::vector<Topic> BuildCSharpTopics() {
             {"record Person(string Name);", "public record Person(string Name);"}, "record Person(string Name);"),
         },
         WithCode(M("Topic Test", {
-            Q("What does internal mean?", {"Accessible within the same assembly", "Accessible everywhere", "Accessible in subclasses", "Private to the class"}, "internal = same assembly only."),
-            Q("What is the default value of a struct's fields?", {"Zero / false / null", "Uninitialized", "A compile error", "Undefined"}, "Value types default to zero-init."),
-            Q("Which is a plain class, not a record?", {"class Person { }", "record Person;", "record struct Point;", "record Person(string Name);"}, "Plain classes don't add record semantics."),
-            }), "Create a Cat object named c using new.", "Cat c = new ...;",
-            { "Cat c = new Cat();" }, "ClassName var = new ClassName();")
+            Q("What does readonly struct enforce?", {"All fields are readonly", "The struct is sealed", "Only static methods", "Nothing"}, "Readonly struct cannot mutate."),
+            Q("Why prefer a record for DTOs?", {"Built-in value equality and ToString", "Faster than classes", "Smaller memory", "Supports inheritance only"}, "Records simplify data models."),
+            Q("Which are reference types by default?", {"classes", "structs", "ints", "enums"}, "Classes are reference types."),
+            }), "Create a Cat object named c.", "Cat c = new ...;",
+            { "Cat c = new Cat();" }, "Cat c = new Cat();")
             ));
 
-    // ---------------------------------------------------------------- 5
-    T.push_back(MakeTopic("Inheritance & Interfaces", "Inherit", "virtual/override, abstract and interfaces.",
+    // ---------------------------------------------------------------- 5: M5
+    T.push_back(MakeTopic("Core OOP & Interfaces", "OOP",
+        "Inheritance, virtual/override, abstract classes, interfaces and DIM.",
         Color{ 235,119,190,255 }, 140,
         {
-            WithCode(M("Inheritance", {
+            WithCode(M("Inheritance & Polymorphism", {
                 Q("How do you inherit from Animal?", {"class Dog : Animal { }", "class Dog extends Animal", "class Dog inherits Animal", "class Dog(Animal)"}, "Colon + base type."),
                 Q("Which keyword lets a base method be overridden?", {"virtual", "override", "abstract", "sealed"}, "Mark the base method virtual."),
                 Q("Which keyword replaces a base method?", {"override", "virtual", "new", "implements"}, "override replaces the base implementation."),
             }), "Write the class header: Dog inherits from Animal (include opening brace).", "class ... : ... {",
-            {"class Dog : Animal {", "class Dog:Animal{"}, "class Derived : Base {"),
+            {"class Dog : Animal {", "class Dog:Animal{"}, "class Dog : Animal {"),
 
-            WithCode(M("Interfaces", {
+            WithCode(M("Interfaces & DIM", {
                 Q("How do you implement IPet?", {"class Cat : IPet { }", "class Cat implements IPet", "class Cat inherits IPet", "class Cat(IPet)"}, "Interfaces go after the colon too."),
-                Q("Can a class implement multiple interfaces?", {"Yes, any number", "No, only one", "Only two", "Only with generics"}, "A class implements any number of interfaces."),
-                Q("A default interface method...", {"Has a body and can be overridden", "Is abstract only", "Cannot be called", "Is a constructor"}, "DIMs allow implementation in the interface."),
+                Q("Can a class implement multiple interfaces?", {"Yes, any number", "No, only one", "Only two", "Only with generics"}, "A class implements any number."),
+                Q("What is a default interface method?", {"Has a body and can be overridden", "Abstract only", "Cannot be called", "A constructor"}, "DIMs allow implementation in the interface."),
             }), "Declare an interface named IPet (include opening brace).", "interface ... {",
-            {"interface IPet {", "interface IPet{"}, "interface Name { ... }"),
+            {"interface IPet {", "interface IPet{"}, "interface IPet {"),
         },
         WithCode(M("Topic Test", {
             Q("What does base refer to?", {"The parent class", "The current class", "The assembly", "The namespace"}, "base reaches the parent."),
             Q("What does abstract mean for a method?", {"No body; subclasses must implement", "Final", "Static", "Private"}, "Abstract methods have no body."),
             Q("Can a class inherit multiple base classes?", {"No", "Yes, any number", "Only two", "Only via interfaces"}, "Single class inheritance only."),
-            }), "Call the parent class's Speak() method from an overriding method.", "base....()",
-            { "base.Speak();" }, "base.Method();")
+            }), "Call the parent class's Speak() from an overriding method.", "base....()",
+            { "base.Speak();" }, "base.Speak();")
             ));
 
-    // ---------------------------------------------------------------- 6
-    T.push_back(MakeTopic("Collections & Generics", "Generics", "List<T>, Dictionary, HashSet and generic constraints.",
+    // ---------------------------------------------------------------- 6: M6
+    T.push_back(MakeTopic("Generics & Collections", "Generics",
+        "Generic classes/methods with constraints, plus the collection types.",
         Color{ 190,60,170,255 }, 180,
         {
+            WithCode(M("Generics", {
+                Q("Which declares a type parameter?", {"<T>", "[T]", "(T)", "{T}"}, "Angle brackets."),
+                Q("Which is a generic constraint?", {"where T : class", "where T is class", "constrain T", "T : class"}, "The where clause."),
+                Q("What do generics provide?", {"Compile-time type safety", "Runtime-only checks", "Faster parsing", "Dynamic typing"}, "Type safety without casts."),
+            }), "Declare a generic method int GetId<T>(T value) with no body.", "int GetId<T>(T value);",
+            {"int GetId<T>(T value);"}, "int GetId<T>(T value);"),
+
             WithCode(M("Collections", {
                 Q("Which is a resizable array?", {"List<T>", "Array", "ArrayList", "Span<T>"}, "List<T> grows automatically."),
                 Q("Which stores key-value pairs?", {"Dictionary<TKey, TValue>", "List<T>", "HashSet<T>", "Queue<T>"}, "Dictionary is a hash map."),
                 Q("Which stores unique elements?", {"HashSet<T>", "List<T>", "Queue<T>", "Dictionary<TKey,TValue>"}, "HashSet rejects duplicates."),
             }), "Create an empty List<int> named nums.", "var nums = new ...",
             {"var nums = new List<int>();", "List<int> nums = new List<int>();"}, "new List<int>()"),
-
-            WithCode(M("Generics", {
-                Q("Which declares a type parameter?", {"<T>", "[T]", "(T)", "{T}"}, "Angle brackets."),
-                Q("Which is a generic constraint?", {"where T : class", "where T is class", "constrain T", "T : class"}, "The where clause."),
-                Q("Generics provide...", {"Compile-time type safety", "Runtime-only type checks", "Faster parsing", "Dynamic typing"}, "Type safety without casts."),
-            }), "Create an empty Dictionary<string, int> named ages.", "var ages = new ...",
-            {"var ages = new Dictionary<string, int>();", "Dictionary<string, int> ages = new Dictionary<string, int>();"}, "new Dictionary<string, int>()"),
         },
         WithCode(M("Topic Test", {
-            Q("Which is thread-safe?", {"ConcurrentDictionary<TKey, TValue>", "Dictionary<TKey, TValue>", "List<T>", "Queue<T>"}, "Concurrent collections are thread-safe."),
             Q("Queue<T> is...", {"FIFO", "LIFO", "Sorted", "Random"}, "First-in, first-out."),
             Q("Stack<T> is...", {"LIFO", "FIFO", "Sorted", "Random"}, "Last-in, first-out."),
-            }), "Create an empty HashSet<int> named ids.", "var ids = new ...",
-            { "var ids = new HashSet<int>();", "HashSet<int> ids = new HashSet<int>();" }, "new HashSet<int>()")
+            Q("Which collection is thread-safe?", {"ConcurrentDictionary<TKey, TValue>", "Dictionary<TKey, TValue>", "List<T>", "Queue<T>"}, "The Concurrent* collections are thread-safe."),
+            }), "Create an empty Dictionary<string, int> named ages.", "var ages = new ...",
+            { "var ages = new Dictionary<string, int>();", "Dictionary<string, int> ages = new Dictionary<string, int>();" }, "new Dictionary<string, int>()")
             ));
 
-    // ---------------------------------------------------------------- 7
-    T.push_back(MakeTopic("LINQ & Lambdas", "LINQ", "Delegates, Action/Func, and query/method LINQ syntax.",
+    // ---------------------------------------------------------------- 7: M7
+    T.push_back(MakeTopic("Delegates, Events & Lambdas", "Delegates",
+        "Func/Action/Predicate, lambdas, custom delegates and events.",
         Color{ 220,80,140,255 }, 230,
         {
             WithCode(M("Delegates & Lambdas", {
@@ -1132,51 +1382,158 @@ inline std::vector<Topic> BuildCSharpTopics() {
             }), "Write a lambda that doubles x.", "x => ...",
             {"x => x * 2", "x => 2 * x"}, "x => x * 2"),
 
-            WithCode(M("LINQ", {
-                Q("Which LINQ method filters?", {"Where", "Select", "Filter", "Find"}, "LINQ uses Where for filtering."),
-                Q("Which LINQ method transforms?", {"Select", "Where", "Map", "Apply"}, "LINQ uses Select for projection."),
-                Q("Which forces immediate execution?", {"ToList()", "Where()", "Select()", "AsQueryable()"}, "ToList materializes the query."),
-            }), "Filter sequence xs to positive numbers using LINQ.", "xs.Where(...)",
-            {"xs.Where(x => x > 0)", "xs.Where(x => x > 0);"}, "xs.Where(x => x > 0)"),
+            WithCode(M("Events", {
+                Q("Which keyword declares a publisher-side event?", {"event", "delegate", "subscribe", "publish"}, "The event keyword."),
+                Q("Which delegate is the standard event handler type?", {"EventHandler", "Action", "Func", "Callback"}, "EventHandler / EventHandler<T>."),
+                Q("How does a subscriber attach a handler?", {"+= handler", "= handler", "-> handler", "attach(handler)"}, "obj.Event += handler;"),
+            }), "Attach the handler OnClick to the event e.Click.", "e.Click ... handler;",
+            {"e.Click += OnClick;", "e.Click += OnClick"}, "e.Click += OnClick;"),
         },
         WithCode(M("Topic Test", {
-            Q("What does deferred execution mean?", {"The query runs when enumerated", "It runs immediately", "It never runs", "It runs on a background thread"}, "LINQ queries are lazy."),
-            Q("Query syntax begins with...", {"from x in source", "select from x", "query x in source", "foreach x in source"}, "Query expressions start with from."),
-            Q("Aggregate returns...", {"A single value", "A collection", "A sequence", "Void"}, "Aggregation collapses to one value."),
-            }), "Project xs to their doubled values using LINQ.", "xs.Select(...)",
-            { "xs.Select(x => x * 2)", "xs.Select(x => x * 2);" }, "xs.Select(x => x * 2)")
+            Q("What does -= do on an event?", {"Detaches a handler", "Attaches a handler", "Fires the event", "Deletes the event"}, "Removes a subscriber."),
+            Q("Why use events instead of public delegate fields?", {"Encapsulation - subscribers cannot fire the event", "They are faster", "They save memory", "They compile faster"}, "Only the declaring class can raise the event."),
+            Q("Which delegate takes no args and returns void?", {"Action", "Func<void>", "Predicate", "EventHandler"}, "Action."),
+            }), "Fire the event Click with sender this and EventArgs.Empty.", "Click?....(...)",
+            { "Click?.Invoke(this, EventArgs.Empty);", "Click?.Invoke(this, EventArgs.Empty)" }, "Click?.Invoke(this, EventArgs.Empty)")
             ));
 
-    // ---------------------------------------------------------------- 8
-    T.push_back(MakeTopic("Async & Exceptions", "Async", "async/await, Task, try/catch/finally, IDisposable and using.",
-        Color{ 250,100,100,255 }, 280,
+    // ---------------------------------------------------------------- 8: M8
+    T.push_back(MakeTopic("LINQ", "LINQ",
+        "Query syntax, method syntax, and deferred vs. immediate execution.",
+        Color{ 240,80,80,255 }, 280,
         {
-            WithCode(M("Async / Await", {
-                Q("What does an async method return?", {"Task or Task<T>", "void always", "int", "Thread"}, "async methods return Task / Task<T>."),
-                Q("Which keyword waits for a Task?", {"await", "wait", "yield", "async"}, "await."),
+            WithCode(M("Query & Method Syntax", {
+                Q("Which LINQ method filters?", {"Where", "Select", "Filter", "Find"}, "Where filters."),
+                Q("Which LINQ method transforms?", {"Select", "Where", "Map", "Apply"}, "Select projects."),
+                Q("Which begins query syntax?", {"from x in source", "select from x", "query x in source", "foreach x in source"}, "Query expressions start with from."),
+            }), "Filter sequence xs to positive numbers using method syntax.", "xs.Where(...)",
+            {"xs.Where(x => x > 0)", "xs.Where(x => x > 0);"}, "xs.Where(x => x > 0)"),
+
+            WithCode(M("Deferred Execution", {
+                Q("What does deferred execution mean?", {"The query runs when enumerated", "It runs immediately", "It never runs", "It runs on a background thread"}, "LINQ is lazy."),
+                Q("Which operator forces immediate execution?", {"ToList()", "Where()", "Select()", "AsQueryable()"}, "ToList materializes the results."),
+                Q("What does .Count() do?", {"Iterates and counts (immediate)", "Returns 0 always", "Defers", "Throws"}, "Count() is a terminal operator."),
+            }), "Force xs.Where(...) into a list.", "xs.Where(...).???",
+            {"xs.Where(x => x > 0).ToList()", "xs.Where(x=>x>0).ToList()"}, "xs.Where(...).ToList()"),
+        },
+        WithCode(M("Topic Test", {
+            Q("Which is an immediate execution operator?", {"ToList", "Select", "Where", "OrderBy"}, "ToList materializes."),
+            Q("What does GroupBy do?", {"Groups elements by a key selector", "Sorts by key", "Filters by key", "Joins two sequences"}, "GroupBy returns groups of matching elements."),
+            Q("What does First() throw when the sequence is empty?", {"InvalidOperationException", "NullReferenceException", "ArgumentException", "Nothing"}, "First() throws; FirstOrDefault returns default."),
+            }), "Take the first 3 elements of xs using LINQ.", "xs.Take(...)",
+            { "xs.Take(3)", "xs.Take(3);" }, "xs.Take(3)")
+            ));
+
+    // ---------------------------------------------------------------- 9: M9
+    T.push_back(MakeTopic("Asynchronous Programming", "Async",
+        "Task/Task<T>, async/await, ValueTask, CancellationToken and async streams.",
+        Color{ 200,120,80,255 }, 330,
+        {
+            WithCode(M("Tasks & async/await", {
+                Q("What does an async method return?", {"Task or Task<T>", "void always", "int", "Thread"}, "async returns Task / Task<T>."),
+                Q("Which keyword awaits a Task?", {"await", "wait", "yield", "async"}, "await."),
                 Q("Which suffix do async methods conventionally get?", {"Async", "_async", "Task", "_t"}, "The Async suffix."),
             }), "Await a Task-returning method called SomeWorkAsync().", "await ...;",
             {"await SomeWorkAsync();"}, "await SomeWorkAsync();"),
 
-            WithCode(M("Exceptions & Disposal", {
+            WithCode(M("Advanced Async", {
+                Q("What does CancellationToken allow?", {"Cooperative cancellation", "Forceful thread kill", "Memory release", "Interop with COM"}, "The token polls for cancellation."),
+                Q("When should you prefer ValueTask over Task?", {"When the operation often completes synchronously", "Always", "Never", "Only for void"}, "ValueTask avoids allocation on the sync path."),
+                Q("What does IAsyncEnumerable<T> stream?", {"Asynchronous sequences via await foreach", "Synchronous collections", "Threads", "Tasks"}, "await foreach consumes it."),
+            }), "Await a Task<T> method GetDataAsync and store the result in data.", "var data = await ...;",
+            {"var data = await GetDataAsync();", "var data = await GetDataAsync();"}, "var data = await GetDataAsync();"),
+        },
+        WithCode(M("Topic Test", {
+            Q("What does async always return?", {"A Task-like type", "void", "undefined", "A callback"}, "async wraps in a Task."),
+            Q("Why avoid async void outside event handlers?", {"Exceptions are unobservable", "It is slower", "It does not compile", "It blocks the thread"}, "async void exceptions cannot be awaited or caught by the caller."),
+            Q("How do you handle errors with async/await?", {"try/catch around the awaits", "Only .ContinueWith", "Task.Fault()", "You cannot"}, "try/catch works the same as sync code."),
+            }), "Await Task.Delay(1000) and store nothing (expression).", "await Task....",
+            { "await Task.Delay(1000)", "await Task.Delay(1000);" }, "await Task.Delay(1000);")
+            ));
+
+    // ---------------------------------------------------------------- 10: M10
+    T.push_back(MakeTopic("Concurrency & Threading", "Threads",
+        "ThreadPool, lock/Monitor, and thread-safe collections.",
+        Color{ 200,80,80,255 }, 380,
+        {
+            WithCode(M("Threading Basics", {
+                Q("Where do short-lived CPU tasks run?", {"On the ThreadPool", "On the main thread", "In async methods only", "In finalizers"}, "ThreadPool reuses worker threads."),
+                Q("Which class represents a thread?", {"Thread", "Task", "Runnable", "Worker"}, "System.Threading.Thread."),
+                Q("What does Task.Run do?", {"Queues work on the ThreadPool", "Blocks the thread", "Creates a new process", "Nothing"}, "Task.Run(work) queues it."),
+            }), "Start a Task that runs the method work() on the pool.", "Task.Run(...)",
+            {"Task.Run(work)", "Task.Run(() => work())"}, "Task.Run(work)"),
+
+            WithCode(M("Synchronization", {
+                Q("Which keyword takes a lock?", {"lock", "synchronized", "mutex", "Monitor"}, "lock (sync) { ... }."),
+                Q("Which type provides a fine-grained locking primitive?", {"Monitor", "Lock", "Semaphore", "Event"}, "Monitor.Enter / Exit."),
+                Q("Which collection is thread-safe?", {"ConcurrentDictionary<TKey, TValue>", "Dictionary<TKey, TValue>", "List<T>", "Queue<T>"}, "Concurrent* collections are thread-safe."),
+            }), "Take a lock on object _sync around the code block (opening).", "lock (...) {",
+            {"lock (_sync) {", "lock(_sync){"}, "lock (_sync) { ... }"),
+        },
+        WithCode(M("Topic Test", {
+            Q("What does Interlocked.Increment(ref x) do?", {"Atomically increments x", "Locks x", "Copies x", "Resets x"}, "Interlocked offers atomic ops."),
+            Q("What is a race condition?", {"Threads interfere over shared mutable state", "Fast loops", "Any exception", "A design pattern"}, "Unsynchronized access to shared state."),
+            Q("Which type signals between threads with an event?", {"ManualResetEventSlim", "Thread", "Task", "Interlocked"}, "ManualResetEventSlim is a synchronization primitive."),
+            }), "Declare a private readonly object field named _sync.", "private readonly object _sync = ...;",
+            { "private readonly object _sync = new object();", "private readonly object _sync = new();" }, "private readonly object _sync = new object();")
+            ));
+
+    // ---------------------------------------------------------------- 11: M11
+    T.push_back(MakeTopic("Exception Handling & Disposal", "Errors",
+        "try/catch/finally, exception filters, IDisposable and using.",
+        Color{ 180,60,60,255 }, 430,
+        {
+            WithCode(M("Exceptions & Filters", {
                 Q("Which block always runs?", {"finally", "catch", "try", "when"}, "finally."),
+                Q("Which keyword adds a filter to catch?", {"when", "filter", "if", "where"}, "catch (Exception ex) when (...)."),
+                Q("Are C# exceptions checked at compile time?", {"No", "Yes", "Only in async", "Only in methods"}, "C# exceptions are unchecked."),
+            }), "Write the opening of a try block (include opening brace).", "try ...",
+            {"try {", "try{"}, "try { ... } catch ..."),
+
+            WithCode(M("IDisposable & using", {
                 Q("Which interface signals disposal?", {"IDisposable", "ICloseable", "using", "IResource"}, "IDisposable."),
-                Q("What does using do for an IDisposable?", {"Calls Dispose automatically at block end", "Calls Close", "Does nothing", "Makes it read-only"}, "using guarantees Dispose."),
-            }), "Wrap a block that uses an IDisposable variable r with a using statement (include opening brace).", "using (...) {",
+                Q("What does using do for an IDisposable?", {"Calls Dispose automatically at scope end", "Calls Close", "Does nothing", "Makes it read-only"}, "using guarantees Dispose."),
+                Q("What is a using declaration (C# 8+)?", {"using var x = new ...; that disposes at method end", "Same as using statement", "A namespace import", "A static import"}, "The variable disposes at end of scope."),
+            }), "Wrap a block that uses IDisposable r with a using statement (opening).", "using (...) {",
             {"using (r) {", "using (var x = r) {"}, "using (r) { ... }"),
         },
         WithCode(M("Topic Test", {
-            Q("Are C# exceptions checked at compile time?", {"No, unchecked by default", "Yes, always checked", "Only for Task methods", "Only for async"}, "Unlike Java, C# exceptions are unchecked."),
-            Q("What is catch (Exception ex) when (...) called?", {"An exception filter", "A pattern", "A guard", "A scope"}, "when adds a filter to catch."),
-            Q("A custom exception usually subclasses...", {"Exception", "Error", "BaseException", "object"}, "Subclass Exception."),
-            }), "Write the opening of a try block (include the opening brace).", "try ...",
-            { "try {" }, "try { ... } catch ...")
+            Q("What does a custom exception usually subclass?", {"Exception", "Error", "BaseException", "object"}, "Subclass Exception."),
+            Q("What does a finally block do?", {"Runs after try/catch regardless of outcome", "Only on success", "Only on failure", "Skips cleanup"}, "finally is guaranteed."),
+            Q("Why prefer using declarations over try/finally?", {"Conciseness and correctness", "Performance", "Async support", "Interop"}, "C# 8+ using var simplifies disposal."),
+            }), "Write a using declaration that owns a new StreamReader for 'f.txt'.", "using var r = new ...;",
+            { "using var r = new StreamReader(\"f.txt\");", "using var r = new StreamReader(\"f.txt\")" }, "using var r = new StreamReader(\"f.txt\");")
+            ));
+
+    // ---------------------------------------------------------------- 12: M12
+    T.push_back(MakeTopic("Advanced Memory & Low-Level C#", "Advanced",
+        "GC generations, Span<T>, stackalloc and unsafe code.",
+        Color{ 160,40,40,255 }, 480,
+        {
+            WithCode(M("Garbage Collection & Span", {
+                Q("Which GC generation holds short-lived objects?", {"Gen 0", "Gen 1", "Gen 2", "LOH"}, "Gen 0 is the youngest."),
+                Q("What is Span<T>?", {"A stack-only, allocation-free view over memory", "A list", "An array", "A class"}, "Span<T> avoids allocations."),
+                Q("What is the Large Object Heap threshold?", {"~85 KB", "1 MB", "10 KB", "1 GB"}, "Objects over ~85 KB go to LOH."),
+            }), "Create a Span<int> over an array named arr.", "Span<int> s = ...",
+            {"Span<int> s = arr;", "Span<int> s = new Span<int>(arr);"}, "Span<int> s = arr;"),
+
+            WithCode(M("stackalloc & unsafe", {
+                Q("What does stackalloc do?", {"Allocates on the stack", "Allocates on the heap", "Clones an array", "Frees memory"}, "Stack-only allocation."),
+                Q("What does the fixed keyword do?", {"Pins a managed object during a pointer scope", "Freezes a variable", "Locks a thread", "Finalizes"}, "fixed pins objects."),
+                Q("Which permission does pointer code require?", {"unsafe context", "admin", "root", "elevated"}, "unsafe { ... }."),
+            }), "Declare an unsafe method header for void Run().", "unsafe void Run()",
+            {"unsafe void Run()", "public unsafe void Run()"}, "public unsafe void Run()"),
+        },
+        WithCode(M("Topic Test", {
+            Q("Does Span<T> box?", {"No, it is stack-only", "Yes", "Only for reference types", "Only in methods"}, "Span is a ref struct."),
+            Q("What is the advantage of stackalloc over new?", {"No heap allocation or GC pressure", "Larger allocation", "Safer", "Persistent"}, "Stack allocation avoids GC."),
+            Q("Why is unsafe code faster?", {"Bypasses bounds checks and GC moves", "It compiles faster", "It uses less memory", "It runs on other threads"}, "Unsafe bypasses safety checks."),
+            }), "Write the opening of an unsafe block.", "unsafe { ... }",
+            { "unsafe {", "unsafe{" }, "unsafe { ... }")
             ));
 
     return T;
-}
-
-// ---------------------------------------------------------------------------
+}// ---------------------------------------------------------------------------
 // JavaScript course. Same shape as the rest: 8 topics, each with 2 modules +
 // 1 test; each module = 3 MC + 1 small code; each test = 3 MC + 1 small code.
 // Covers the modern language (ES2015+) end-to-end:
