@@ -1,6 +1,7 @@
 #pragma once
 // Game.h - owns the Player + content and runs every screen (dark theme, animated).
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <numeric>
 #include <string>
@@ -77,7 +78,16 @@ private:
     float listScroll = 0, listTarget = 0;
 
     // lesson
-    struct Item { bool isCode = false; int qi = 0; std::vector<int> order; };
+    struct Item {
+        bool isCode = false; int qi = 0; std::vector<int> order;
+        // code questions: 0 build from pieces, 1 fill the blank, 2 type it
+        int mode = 2;
+        std::vector<std::string> tokens;           // build: pieces in correct order (`order` = tray shuffle)
+        std::vector<int> placed;                   // build: token indices the player has placed, in order
+        std::string before, mid, after;            // fill: accepted[0] split around the blank
+        std::vector<std::string> choices;          // fill: 3 buttons
+        int correctChoice = 0;
+    };
     const Module* mod = nullptr;
     int modTopic = 0, modIdx = 0;                  // modIdx -1 == topic test
     std::vector<Item> items;
@@ -92,6 +102,8 @@ private:
     Vector2 fxAt{ 550, 300 };
     // result
     float resT = 0; bool resBurst = false;
+    // lesson cards (shown before a module's questions)
+    bool inCards = false; int cardIdx = 0, selPart = -1; float cardT = 0;
 
     void Go(Screen s) { screen = s; fade = 1.0f; }
     void Toast(const std::string& s) { toast = s; toastT = 2.5f; }
@@ -138,13 +150,323 @@ private:
             for (int k = (int)it.order.size() - 1; k > 0; k--) std::swap(it.order[k], it.order[GetRandomValue(0, k)]);
             items.push_back(it);
         }
-        if (mod->hasCode) { Item c; c.isCode = true; items.push_back(c); }
+        if (mod->hasCode) { Item c; c.isCode = true; BuildCodeItem(c); items.push_back(c); }
         cur = 0; lives = 3 + p.extraLife; p.extraLife = 0;
         correct = streak = bestStreak = 0;
         resXp = resCoins = levelUps = 0; progShown = 0; hurtT = 0;
         ResetItem();
+        inCards = !mod->lesson.empty(); cardIdx = 0; selPart = -1; cardT = 0;
         Go(Screen::Lesson);
     }
+    // ----------------------------------------------------------- code question modes
+    // The code question is a ladder: build from pieces -> fill the blank -> type it.
+    // Mode comes from CodeTask::mode, or automatically from the topic's position in the course.
+    struct Token { size_t pos = 0, len = 0; bool ok = false; };
+    static bool IsIdCh(char c) { return std::isalnum((unsigned char)c) || c == '_'; }
+
+    static std::vector<std::string> Tokenize(const std::string& s) {      // covers every non-space character
+        static const char* two[] = { "==", "!=", "<=", ">=", "&&", "||", "++", "--", "->", "::", "+=", "-=", "*=", "/=" };
+        std::vector<std::string> out; size_t n = s.size(), i = 0;
+        while (i < n) {
+            unsigned char ch = (unsigned char)s[i];
+            if (std::isspace(ch)) { i++; continue; }
+            if (ch == '"') {
+                size_t j = i + 1;
+                while (j < n && s[j] != '"') { if (s[j] == '\\' && j + 1 < n) j++; j++; }
+                j = std::min(j + 1, n); out.push_back(s.substr(i, j - i)); i = j;
+            }
+            else if (std::isalnum(ch) || ch == '_') {
+                size_t j = i;
+                while (j < n && (IsIdCh(s[j]) || (s[j] == '.' && j + 1 < n && IsIdCh(s[j + 1])))) j++;
+                out.push_back(s.substr(i, j - i)); i = j;
+            }
+            else {
+                bool m = false;
+                if (i + 1 < n) { std::string d = s.substr(i, 2); for (auto t : two) if (d == t) { out.push_back(d); i += 2; m = true; break; } }
+                if (!m) { out.push_back(std::string(1, s[i])); i++; }
+            }
+        }
+        return out;
+    }
+    // Token to blank in fill mode: last "string", else last number, else last identifier before ; } ) {
+    static Token FindToken(const std::string& s) {
+        Token t; size_t n = s.size();
+        for (size_t i = 0; i < n;) {
+            if (s[i] == '"') {
+                size_t j = i + 1;
+                while (j < n && s[j] != '"') { if (s[j] == '\\' && j + 1 < n) j++; j++; }
+                if (j >= n) break;
+                t.pos = i; t.len = j - i + 1; t.ok = true; i = j + 1;
+            }
+            else i++;
+        }
+        if (t.ok) return t;
+        for (size_t i = 0; i < n;) {
+            if (std::isdigit((unsigned char)s[i]) && (i == 0 || !IsIdCh(s[i - 1]))) {
+                size_t j = i;
+                while (j < n && (std::isdigit((unsigned char)s[j]) || (s[j] == '.' && j + 1 < n && std::isdigit((unsigned char)s[j + 1])))) j++;
+                if (j >= n || !IsIdCh(s[j])) { t.pos = i; t.len = j - i; t.ok = true; }
+                i = j;
+            }
+            else i++;
+        }
+        if (t.ok) return t;
+        for (size_t i = 0; i < n;) {
+            if (std::isalpha((unsigned char)s[i]) || s[i] == '_') {
+                size_t j = i; while (j < n && IsIdCh(s[j])) j++;
+                size_t k = j; while (k < n && (s[k] == ' ' || s[k] == '\t')) k++;
+                if (k < n && (s[k] == ';' || s[k] == '}' || s[k] == ')' || s[k] == '{')) { t.pos = i; t.len = j - i; t.ok = true; }
+                i = j;
+            }
+            else i++;
+        }
+        return t;
+    }
+    static int TokCat(const std::string& t) {            // 0 string, 1 number, 2 identifier
+        if (!t.empty() && t[0] == '"') return 0;
+        if (!t.empty() && (std::isdigit((unsigned char)t[0]) || t[0] == '-')) return 1;
+        return 2;
+    }
+
+    void BuildCodeItem(Item& it) {
+        it.mode = 2;
+        if (!mod || mod->code.accepted.empty()) return;
+        const CodeTask& c = mod->code;
+        const std::string& acc = c.accepted[0];
+        int want = c.mode >= 0 ? c.mode : (modTopic < 2 ? 0 : (modTopic < 4 ? 1 : 2));
+        if (want == 0) {
+            std::vector<std::string> toks = Tokenize(acc);
+            if (toks.size() >= 2 && toks.size() <= 16) {
+                it.tokens = toks;
+                it.order.resize(toks.size());
+                std::iota(it.order.begin(), it.order.end(), 0);
+                for (int k = (int)it.order.size() - 1; k > 0; k--) std::swap(it.order[k], it.order[GetRandomValue(0, k)]);
+                bool sorted = true;
+                for (size_t k = 0; k < it.order.size(); k++) if (it.order[k] != (int)k) sorted = false;
+                if (sorted) std::swap(it.order[0], it.order[1]);       // never hand over the answer pre-assembled
+                it.mode = 0; return;
+            }
+            want = 1;                                                  // too long to build: fall back to fill
+        }
+        if (want == 1) {
+            Token t = FindToken(acc);
+            if (!t.ok) return;
+            it.before = acc.substr(0, t.pos); it.mid = acc.substr(t.pos, t.len); it.after = acc.substr(t.pos + t.len);
+            int cat = TokCat(it.mid);
+            std::vector<std::string> pool;                             // distractors from other code tasks
+            auto consider = [&](const Module& m) {
+                if (&m == mod || !m.hasCode || m.code.accepted.empty()) return;
+                Token d = FindToken(m.code.accepted[0]);
+                if (!d.ok) return;
+                std::string txt = m.code.accepted[0].substr(d.pos, d.len);
+                if (TokCat(txt) != cat || txt == it.mid) return;
+                if (std::find(pool.begin(), pool.end(), txt) == pool.end()) pool.push_back(txt);
+                };
+            for (const Topic& T : topics) { for (const Module& m : T.modules) consider(m); consider(T.test); }
+            for (int k = (int)pool.size() - 1; k > 0; k--) std::swap(pool[k], pool[GetRandomValue(0, k)]);
+            std::vector<std::string> ch{ it.mid };
+            for (auto& s : pool) { if (ch.size() >= 3) break; ch.push_back(s); }
+            const std::string pad = cat == 0 ? "\"?\"" : (cat == 1 ? "0" : "foo");
+            while (ch.size() < 3) {
+                std::string s = pad;
+                while (std::find(ch.begin(), ch.end(), s) != ch.end()) s += "x";
+                ch.push_back(s);
+            }
+            for (int k = 2; k > 0; k--) std::swap(ch[k], ch[GetRandomValue(0, k)]);
+            it.choices = ch;
+            for (int k = 0; k < 3; k++) if (ch[k] == it.mid) it.correctChoice = k;
+            it.mode = 1;
+        }
+    }
+    void SubmitBuild(Item& it) {
+        std::string joined;
+        for (int k : it.placed) joined += it.tokens[k];
+        bool right = false;
+        for (auto& a : mod->code.accepted) if (Norm(a) == Norm(joined)) right = true;
+        Grade(right, true, "Answer: " + mod->code.accepted[0], mod->code.explain);
+    }
+
+    // chips (build mode)
+    static std::vector<Rectangle> FlowRects(const std::vector<std::string>& labels, float maxW, float fs, float& totalH) {
+        std::vector<Rectangle> out; float cx = 0, cy = 0; const float h = 42, gap = 10;
+        for (auto& l : labels) {
+            float w = std::max(44.0f, TxtW(l, fs, true) + 30);
+            if (cx > 0 && cx + w > maxW) { cx = 0; cy += h + gap; }
+            out.push_back({ cx, cy, w, h }); cx += w + gap;
+        }
+        totalH = labels.empty() ? 0.0f : cy + h;
+        return out;
+    }
+    bool Chip(Rectangle r, const std::string& label, Color tone, bool faded, float fs) {
+        Vector2 m = GetMousePosition();
+        if (faded) { Box(r, 12, Al(kSurface2, 0.5f)); Txt(label, r.x + 15, r.y + (r.height - fs * 1.2f) / 2, fs, Al(kLock, 0.6f), true); return false; }
+        bool hover = CheckCollisionPointRec(m, r);
+        Rectangle d = r; if (hover) d.y -= 2;
+        Shadow(d, 12, 3, 0.3f);
+        BoxB(d, 12, Mix(kSurface2, tone, hover ? 0.3f : 0.12f), Mix(kBorder, tone, hover ? 1.0f : 0.4f), 2);
+        Txt(label, d.x + 15, d.y + (d.height - fs * 1.2f) / 2, fs, kText, true);
+        bool click = hover && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+        if (click) { FxRing(m.x, m.y, tone, 36); FxSparks(m.x, m.y, tone, 6); }
+        return click;
+    }
+    float HintPanel(float x, float y, float w) {
+        float hh = Wrap("Hint: " + mod->code.hint, x + 52, y + 14, w - 80, 17, kSky, false);
+        Box({ x, y, w, hh + 28 }, 14, Al(kSky, 0.12f));
+        Icon(IC_BULB, x + 26, y + 14 + hh / 2, 10, kSky);
+        Wrap("Hint: " + mod->code.hint, x + 52, y + 14, w - 80, 17, kSky);
+        return hh + 28;
+    }
+
+    void DrawBuild(Item& it, float contentTop, float enter) {
+        const CodeTask& c = mod->code;
+        while (GetCharPressed() > 0) {}
+        float ph = Wrap(c.prompt, 150, contentTop, 800, 28, Al(kText, enter), true, false, nullptr, 1.3f);
+        const float fs = 20;
+        std::vector<std::string> pl;
+        for (int k : it.placed) pl.push_back(it.tokens[k]);
+        float hp = 0; std::vector<Rectangle> pr = FlowRects(pl, 768, fs, hp);
+        Rectangle box{ 150, contentTop + ph + 22, 800, std::max(74.0f, hp + 32) };
+        Color edge = answered ? (wasRight ? kMint : kCoral) : kBorder;
+        if (answered && !wasRight) box.x += std::sin(answerT * 48) * 12 * std::exp(-answerT * 7);
+        BoxB(box, 16, Color{ 9, 12, 20, 255 }, edge, 2);
+        if (pl.empty()) Txt("Tap the pieces below to build the line", box.x + 24, box.y + box.height / 2 - 10, 17, kMuted);
+        int removeAt = -1;
+        for (size_t i = 0; i < pr.size(); i++) {
+            Rectangle r{ pr[i].x + box.x + 16, pr[i].y + box.y + (box.height - hp) / 2, pr[i].width, pr[i].height };
+            if (Chip(r, pl[i], answered ? edge : kSky, false, fs) && !answered) removeAt = (int)i;
+        }
+        if (removeAt >= 0) it.placed.erase(it.placed.begin() + removeAt);
+
+        float ty = box.y + box.height + 26;
+        Txt("Pieces", 150, ty, 14, kMuted);
+        std::vector<std::string> tl;
+        for (int o : it.order) tl.push_back(it.tokens[o]);
+        float ht = 0; std::vector<Rectangle> tr = FlowRects(tl, 800, fs, ht);
+        for (size_t i = 0; i < tr.size(); i++) {
+            bool used = std::find(it.placed.begin(), it.placed.end(), it.order[i]) != it.placed.end();
+            Rectangle r{ tr[i].x + 150, tr[i].y + ty + 26, tr[i].width, tr[i].height };
+            if (Chip(r, tl[i], kViolet, used || answered, fs) && !answered) it.placed.push_back(it.order[i]);
+        }
+        if (showCodeHint) HintPanel(150, ty + 26 + ht + 20, 800);
+        fxAt = { box.x + box.width - 140, box.y + box.height / 2 };
+    }
+
+    void DrawFill(Item& it, float contentTop, float enter) {
+        const CodeTask& c = mod->code;
+        while (GetCharPressed() > 0) {}
+        float ph = Wrap(c.prompt, 150, contentTop, 800, 28, Al(kText, enter), true, false, nullptr, 1.3f);
+        Rectangle box{ 150, contentTop + ph + 26, 800, 74 };
+        if (answered && !wasRight) box.x += std::sin(answerT * 48) * 12 * std::exp(-answerT * 7);
+        BoxB(box, 16, Color{ 9, 12, 20, 255 }, answered ? (wasRight ? kMint : kCoral) : kBorder, 2);
+        std::string mid = answered ? it.mid : "___";
+        Color midCol = answered ? kMint : kSky;
+        const Color codeCol{ 190, 255, 220, 255 };
+        float fs = 24;
+        while (fs > 14 && TxtW(it.before + mid + it.after, fs, true) > box.width - 90) fs -= 1;
+        float ty = box.y + (box.height - fs * 1.25f) / 2, x = box.x + 50;
+        float wb = TxtW(it.before, fs, true), wm = TxtW(mid, fs, true);
+        Txt(">", box.x + 22, box.y + 22, 24, kViolet, true);
+        Txt(it.before, x, ty, fs, codeCol, true);
+        Box({ x + wb - 5, ty - 3, wm + 10, fs * 1.25f + 6 }, 7, Al(midCol, 0.22f));
+        Txt(mid, x + wb, ty, fs, midCol, true);
+        Txt(it.after, x + wb + wm, ty, fs, codeCol, true);
+
+        float yy = box.y + box.height + 24;
+        Txt("Pick the piece that belongs in the blank:", box.x, yy, 15, kMuted);
+        for (int i = 0; i < 3; i++) {
+            Rectangle r{ 170.0f + i * 260, yy + 34, 240, 58 };
+            bool isC = i == it.correctChoice;
+            if (!answered) {
+                if (Button(r, it.choices[i], kSky, true, 20, true) || IsKeyPressed(KEY_ONE + i)) {
+                    picked = i; fxAt = { r.x + 120, r.y + 29 };
+                    Grade(isC, true, "Answer: " + c.accepted[0], c.explain);
+                }
+            }
+            else {
+                Color tone = isC ? kMint : (i == picked ? kCoral : kLock);
+                BoxB(r, 16, Mix(kSurface, tone, isC || i == picked ? 0.16f : 0.0f), tone, 2);
+                TxtC(Fit(it.choices[i], 216, 20), r.x + 120, r.y + 17, 20, isC || i == picked ? tone : kMuted);
+            }
+        }
+        if (showCodeHint) HintPanel(box.x, yy + 110, box.width);
+    }
+
+    // ----------------------------------------------------------- lesson cards
+    void DrawCards(float dt) {
+        cardT += dt;
+        const std::vector<LessonCard>& cards = mod->lesson;
+        const LessonCard& c = cards[cardIdx];
+        bool last = cardIdx + 1 >= (int)cards.size();
+        bool replay = p.done.count(Key(modTopic, modIdx)) > 0;
+        float enter = EaseOut(cardT / 0.35f);
+        Vector2 m = GetMousePosition();
+        static const Color pal[5] = { kSky, kMint, kAmber, kViolet, kCoral };
+
+        if (Button({ 24, 20, 48, 48 }, "", kSurface2, true, 20, true)) { p.Save(); Go(Screen::Map); return; }
+        Icon(IC_CROSS, 48, 44, 9, kMuted);
+        Txt("LEARN FIRST", 92, 24, 13, kSky);
+        Txt(Fit(modIdx < 0 ? topics[modTopic].test.title : topics[modTopic].modules[modIdx].title, 600, 22), 92, 40, 22, kText);
+        if (replay && Button({ W - 24 - 120, 20, 120, 44 }, "Skip", kSky, true, 19, true)) { inCards = false; itemT = 0; return; }
+
+        float y = 112;
+        Txt(Fit(c.title, 800, 36), 150, y + 12 * (1 - enter), 36, Al(kText, enter));
+        y += 58;
+        y += Wrap(c.text, 150, y, 800, 21, Al(kText, 0.92f * enter), true, false, nullptr, 1.4f) + 26;
+
+        if (!c.code.empty()) {
+            Rectangle box{ 150, y, 800, 74 };
+            BoxB(box, 16, Color{ 9, 12, 20, 255 }, kBorder, 2);
+            float fs = 26;
+            while (fs > 14 && TxtW(c.code, fs, true) > box.width - 90) fs -= 1;
+            float ty = box.y + (box.height - fs * 1.25f) / 2, x = box.x + 50;
+            const Color codeCol{ 190, 255, 220, 255 };
+            Txt(">", box.x + 22, box.y + 22, 24, kViolet, true);
+            size_t pos = 0;
+            auto gap = [&](size_t a, size_t b) {
+                if (b > a) Txt(c.code.substr(a, b - a), x + TxtW(c.code.substr(0, a), fs, true), ty, fs, codeCol, true);
+                };
+            for (int pi = 0; pi < (int)c.parts.size(); pi++) {
+                size_t f = c.code.find(c.parts[pi].first, pos);
+                if (f == std::string::npos || c.parts[pi].first.empty()) continue;
+                gap(pos, f);
+                std::string sub = c.parts[pi].first;
+                float px = x + TxtW(c.code.substr(0, f), fs, true), pw = TxtW(sub, fs, true);
+                Color pc = pal[pi % 5];
+                Rectangle hr{ px - 5, ty - 4, pw + 10, fs * 1.25f + 8 };
+                bool hov = CheckCollisionPointRec(m, hr), sel = pi == selPart;
+                Box(hr, 8, Al(pc, sel ? 0.38f : (hov ? 0.28f : 0.14f)));
+                if (sel) Box({ hr.x, hr.y + hr.height - 3, hr.width, 3 }, 1.5f, pc);
+                Txt(sub, px, ty, fs, pc, true);
+                if (hov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { selPart = pi; FxRing(m.x, m.y, pc, 40); }
+                pos = f + sub.size();
+            }
+            gap(pos, c.code.size());
+
+            float y2 = box.y + box.height + 18;
+            if (!c.parts.empty()) {
+                if (selPart >= 0 && selPart < (int)c.parts.size()) {
+                    Color tone = pal[selPart % 5];
+                    float lh = Wrap(c.parts[selPart].second, box.x + 24, y2 + 44, 752, 19, kText, false);
+                    Box({ box.x, y2, box.width, lh + 58 }, 14, Al(tone, 0.14f));
+                    Txt(c.parts[selPart].first, box.x + 24, y2 + 12, 20, tone, true);
+                    Wrap(c.parts[selPart].second, box.x + 24, y2 + 44, 752, 19, kText);
+                }
+                else Txt("Tap any highlighted part of the code to see what it does.", box.x, y2, 16, kMuted);
+            }
+        }
+
+        DrawRectangle(0, (int)(H - 110), (int)W, 110, kSurface);
+        DrawRectangle(0, (int)(H - 110), (int)W, 2, kBorder);
+        int n = (int)cards.size();
+        for (int i = 0; i < n; i++)
+            DrawCircleV({ W / 2 - (n - 1) * 14.0f + i * 28, H - 56 }, i == cardIdx ? 7.0f : 5.0f, i == cardIdx ? kSky : kBorder);
+        if (cardIdx > 0 && Button({ 150, H - 84, 150, 56 }, "Back", kSky, true, 21, true)) { cardIdx--; cardT = 0; selPart = -1; }
+        if (Button({ W - 150 - 200, H - 84, 200, 56 }, last ? "Start quiz" : "Next", kMint, true, 23) || IsKeyPressed(KEY_ENTER)) {
+            if (last) { inCards = false; itemT = 0; }
+            else { cardIdx++; cardT = 0; selPart = -1; }
+        }
+    }
+
     void ResetItem() {
         answered = wasRight = showCodeHint = false;
         picked = -1; input.clear(); feedback.clear();
@@ -458,6 +780,7 @@ private:
 
     // ----------------------------------------------------------- LESSON
     void DrawLesson(float dt) {
+        if (inCards) { DrawCards(dt); return; }
         if (answered) answerT += dt; else answerT = 0;
         itemT += dt; if (hurtT > 0) hurtT -= dt;
         const Topic& T = topics[modTopic];
@@ -477,7 +800,7 @@ private:
             DrawHeart(836 + i * 46 + sh, 38, 12 * (k > 0 ? 1 + 0.4f * (1 - k) : 1), k > 0 ? Al(kCoral, k) : kCoral);
         }
         std::string head = (modIdx < 0 ? T.test.title : T.modules[modIdx].title) + "   -   " +
-            (it.isCode ? "Code challenge" : "Question " + std::to_string(cur + 1) + " of " + std::to_string(items.size()));
+            (it.isCode ? (it.mode == 0 ? "Build the code" : it.mode == 1 ? "Fill in the blank" : "Code challenge") : "Question " + std::to_string(cur + 1) + " of " + std::to_string(items.size()));
         Txt(Fit(head, 600, 15), 150, 86, 15, it.isCode ? kViolet : kMuted);
         if (streak >= 3) {
             float pu = 1 + 0.05f * std::sin(time * 8);
@@ -545,6 +868,12 @@ private:
                 }
             }
         }
+        else if (it.mode == 0) {
+            DrawBuild(it, contentTop, enter);
+        }
+        else if (it.mode == 1) {
+            DrawFill(it, contentTop, enter);
+        }
         else {
             const CodeTask& c = mod->code;
             float ph = Wrap(c.prompt, 150, contentTop, 800, 28, Al(kText, enter), true, false, nullptr, 1.3f);
@@ -580,9 +909,11 @@ private:
             DrawRectangle(0, (int)bar.y, (int)W, (int)bar.height, kSurface);
             DrawRectangle(0, (int)bar.y, (int)W, 2, kBorder);
             if (Button({ 150, H - 84, 170, 56 }, "Hint  (" + std::to_string(p.hints) + ")", kSky, p.hints > 0, 21, true)) UseHint();
-            if (it.isCode) {
-                bool ok = !input.empty();
-                if (Button({ W - 150 - 200, H - 84, 200, 56 }, "Check", kMint, ok, 23) || (ok && IsKeyPressed(KEY_ENTER))) SubmitCode();
+            if (it.isCode && it.mode != 1) {
+                bool ok = it.mode == 0 ? !it.placed.empty() : !input.empty();
+                if (Button({ W - 150 - 200, H - 84, 200, 56 }, "Check", kMint, ok, 23) || (ok && IsKeyPressed(KEY_ENTER))) {
+                    if (it.mode == 0) SubmitBuild(it); else SubmitCode();
+                }
             }
         }
         else {

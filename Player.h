@@ -24,6 +24,7 @@ public:
     int extraLife = 0;    // bonus hearts for the next lesson
     std::set<std::string> done;   // finished modules / tests
     std::set<int> unlocked;       // topics bought with coins
+    std::set<std::string> seenCode;   // code questions whose worked example was completed
     std::vector<Quest> quests;
 
     Player() { Reset(); Load(); }
@@ -31,7 +32,7 @@ public:
     void Reset() {
         quests = { {QK_CORRECT, 10, 10, 0}, {QK_MODULES, 2, 15, 0},
                    {QK_STREAK, 3, 10, 0},   {QK_CODE, 1, 12, 0} };
-        unlocked = {0};
+        unlocked = { 0 };
     }
 
     int   Level() const { return xp / 100 + 1; }
@@ -55,6 +56,9 @@ public:
         }
     }
 
+    bool CodeSeen(const std::string& key) const { return seenCode.count(key) > 0; }
+    void MarkCodeSeen(const std::string& key) { seenCode.insert(key); }
+
     bool CanClaim(int i) const { return quests[i].progress >= quests[i].target; }
 
     void Claim(int i) {
@@ -69,10 +73,10 @@ public:
     static std::string QuestText(const Quest& q) {
         std::string n = std::to_string(q.target);
         switch (q.kind) {
-            case QK_CORRECT: return "Answer " + n + " questions correctly";
-            case QK_MODULES: return "Complete " + n + " modules";
-            case QK_STREAK:  return "Reach a streak of " + n + " correct answers";
-            default:         return "Solve " + n + " code challenges";
+        case QK_CORRECT: return "Answer " + n + " questions correctly";
+        case QK_MODULES: return "Complete " + n + " modules";
+        case QK_STREAK:  return "Reach a streak of " + n + " correct answers";
+        default:         return "Solve " + n + " code challenges";
         }
     }
 
@@ -87,6 +91,8 @@ public:
         for (int u : unlocked) f << ' ' << u;
         f << '\n' << done.size();
         for (auto& d : done) f << ' ' << d;
+        f << '\n' << seenCode.size();
+        for (auto& k : seenCode) f << ' ' << k;
         f << '\n';
     }
 
@@ -102,5 +108,8 @@ public:
         unlocked.insert(0);
         f >> n; done.clear();
         for (size_t i = 0; i < n; i++) { std::string d; f >> d; done.insert(d); }
+        seenCode.clear();                       // old saves have no section: stays empty
+        if (f >> n)
+            for (size_t i = 0; i < n; i++) { std::string k; if (f >> k) seenCode.insert(k); }
     }
 };
