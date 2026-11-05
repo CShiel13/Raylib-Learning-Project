@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include "raylib.h"
+#include "rlgl.h"
 
 // ------------------------------------------------------------------ palette
 inline const Color kBg{ 14,  19,  31, 255 };
@@ -21,6 +22,36 @@ inline const Color kAmber{ 255, 196,  61, 255 };
 inline const Color kCoral{ 255,  92, 110, 255 };
 inline const Color kSky{ 77, 171, 255, 255 };
 inline const Color kLock{ 72,  82, 112, 255 };
+
+// ------------------------------------------------------------------ view scaling / scrolling state
+// The whole UI is laid out on a 1100x700 canvas and scaled to whatever the window is.
+inline const float kCanvasW = 1100, kCanvasH = 700;
+inline float gScale = 1, gOffX = 0, gOffY = 0;          // canvas -> window transform
+inline float gTextScale = 1.10f;                         // global text size boost (readability)
+inline bool gInScroll = false;                           // inside a Scroller block?
+inline float gScrollY = 0;
+inline Rectangle gScrollView{ 0, 0, 0, 0 };
+
+inline void UpdateViewScale() {
+    float sw = (float)GetScreenWidth(), sh = (float)GetScreenHeight();
+    gScale = std::min(sw / kCanvasW, sh / kCanvasH);
+    gOffX = (sw - kCanvasW * gScale) / 2; gOffY = (sh - kCanvasH * gScale) / 2;
+}
+inline Vector2 MouseCanvas() {                           // mouse in canvas units, ignoring scroll
+    Vector2 m = GetMousePosition();
+    return { (m.x - gOffX) / gScale, (m.y - gOffY) / gScale };
+}
+inline Vector2 Mouse() {                                 // mouse in the coordinates content is drawn in
+    Vector2 m = MouseCanvas();
+    if (gInScroll) {
+        if (!CheckCollisionPointRec(m, gScrollView)) return { -9999, -9999 };
+        m.y += gScrollY;
+    }
+    return m;
+}
+inline void ScissorOn(float x, float y, float w, float h) {
+    BeginScissorMode((int)(x * gScale + gOffX), (int)(y * gScale + gOffY), (int)(w * gScale) + 1, (int)(h * gScale) + 1);
+}
 
 // ------------------------------------------------------------------ math
 inline float Clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
@@ -51,7 +82,7 @@ inline Font LoadFirstFont(const char* const* paths, int n, int size) {
     for (int i = 0; i < n; i++) {
         if (!FileExists(paths[i])) continue;
         Font f = LoadFontEx(paths[i], size, nullptr, 0);
-        if (f.texture.id > 0) { SetTextureFilter(f.texture, TEXTURE_FILTER_BILINEAR); return f; }
+        if (f.texture.id > 0) { GenTextureMipmaps(&f.texture); SetTextureFilter(f.texture, TEXTURE_FILTER_TRILINEAR); return f; }
     }
     return GetFontDefault();
 }
@@ -60,16 +91,18 @@ inline void LoadFonts() {   // call after InitWindow. Falls back to raylib's bui
         "/System/Library/Fonts/Supplemental/Arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" };
     static const char* mono[] = { "C:/Windows/Fonts/consola.ttf", "C:/Windows/Fonts/cour.ttf",
         "/System/Library/Fonts/Supplemental/Courier New.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf" };
-    gFont = LoadFirstFont(ui, 4, 56);
-    gMono = LoadFirstFont(mono, 4, 56);
+    gFont = LoadFirstFont(ui, 4, 64);
+    gMono = LoadFirstFont(mono, 4, 64);
     gFontsReady = true;
 }
 inline const Font& Fnt(bool mono) { return mono ? gMono : gFont; }
 
 inline float TxtW(const std::string& s, float fs, bool mono = false) {
+    fs *= gTextScale;
     return MeasureTextEx(Fnt(mono), s.c_str(), fs, fs * 0.02f).x;
 }
 inline void Txt(const std::string& s, float x, float y, float fs, Color c, bool mono = false) {
+    fs *= gTextScale;
     DrawTextEx(Fnt(mono), s.c_str(), { x, y }, fs, fs * 0.02f, c);
 }
 inline void TxtC(const std::string& s, float cx, float y, float fs, Color c, bool mono = false) {
@@ -86,7 +119,7 @@ inline std::string Fit(std::string s, float maxW, float fs, bool mono = false) {
 // Word-wrap. draw=false only measures. Returns the height used.
 inline float Wrap(const std::string& text, float x, float y, float maxW, float fs, Color c,
     bool draw = true, bool mono = false, int* linesOut = nullptr, float lh = 1.35f) {
-    float lineH = fs * lh, cy = y; int lines = 0;
+    float lineH = fs * gTextScale * lh, cy = y; int lines = 0;
     std::string line, word;
     auto flush = [&]() { if (draw) Txt(line, x, cy, fs, c, mono); cy += lineH; lines++; };
     auto pushWord = [&]() {
@@ -117,6 +150,28 @@ inline void BoxB(Rectangle r, float rad, Color fill, Color border, float bw = 2)
 }
 inline void Shadow(Rectangle r, float rad, float off = 6, float a = 0.45f) {
     Box({ r.x, r.y + off, r.width, r.height }, rad, Al(Color{ 0, 0, 0, 255 }, a));
+}
+// Raised panel: soft drop shadow, extruded lip underneath, lit top rim.
+inline void Card3D(Rectangle r, float rad, Color fill, Color edge, float depth = 6) {
+    for (int i = 3; i >= 1; i--) Box({ r.x - i * 2.0f, r.y + depth + i * 3.0f, r.width + i * 4.0f, r.height }, rad + i * 2, Al(Color{ 0, 0, 0, 255 }, 0.10f));
+    Box({ r.x, r.y + depth, r.width, r.height }, rad, Mix(edge, kBg, 0.55f));
+    Box(r, rad, edge);
+    Rectangle i{ r.x + 2, r.y + 2, r.width - 4, r.height - 4 };
+    Box(i, std::max(1.0f, rad - 2), Mix(fill, Color{ 255, 255, 255, 255 }, 0.09f));
+    Box({ i.x, i.y + 2, i.width, i.height - 2 }, std::max(1.0f, rad - 2), fill);
+}
+// Sunken panel (code boxes, editors): dark well with an inner top shadow.
+inline void Inset(Rectangle r, float rad, Color fill, Color edge, float = 2) {
+    Box(r, rad, Mix(edge, Color{ 255, 255, 255, 255 }, 0.06f));
+    Rectangle i{ r.x + 2, r.y + 2, r.width - 4, r.height - 4 };
+    Box(i, std::max(1.0f, rad - 2), fill);
+    Box({ i.x, i.y, i.width, std::min(10.0f, i.height) }, std::max(1.0f, rad - 2), Al(Color{ 0, 0, 0, 255 }, 0.22f));
+    Box({ i.x, i.y + 4, i.width, i.height - 4 }, std::max(1.0f, rad - 2), fill);
+}
+inline void DrawBackground() {
+    DrawRectangleGradientV(-3000, -3000, 7100, 6700, Color{ 12, 16, 27, 255 }, Color{ 22, 28, 46, 255 });
+    DrawCircleV({ 120, 90 }, 420, Al(kViolet, 0.045f));
+    DrawCircleV({ 1000, 640 }, 460, Al(kMint, 0.035f));
 }
 inline Rectangle ScaleRect(Rectangle r, float s) {
     float w = r.width * s, h = r.height * s;
@@ -178,6 +233,7 @@ struct FxState { std::vector<Particle> ps; std::vector<RingFx> rs; std::vector<F
 inline FxState& Fx() { static FxState s; return s; }
 
 inline void FxBurst(float x, float y, int n) {          // confetti
+    y -= gScrollY;
     const Color pal[5] = { kMint, kAmber, kViolet, kSky, kCoral };
     for (int i = 0; i < n; i++) {
         float a = Rnd() * 6.2832f, sp = 140 + Rnd() * 420;
@@ -187,13 +243,14 @@ inline void FxBurst(float x, float y, int n) {          // confetti
     }
 }
 inline void FxSparks(float x, float y, Color c, int n = 10) {
+    y -= gScrollY;
     for (int i = 0; i < n; i++) {
         float a = Rnd() * 6.2832f, sp = 60 + Rnd() * 180;
         Fx().ps.push_back({ {x, y}, {std::cos(a) * sp, std::sin(a) * sp}, 0, 0, 0, 0.35f + Rnd() * 0.25f, 3 + Rnd() * 3, c, 1 });
     }
 }
-inline void FxRing(float x, float y, Color c, float r1 = 60) { Fx().rs.push_back({ {x, y}, 0, 0.45f, r1, c }); }
-inline void FxFloat(float x, float y, const std::string& s, Color c, float fs = 26) { Fx().fs.push_back({ {x, y}, 0, 1.0f, fs, s, c }); }
+inline void FxRing(float x, float y, Color c, float r1 = 60) { Fx().rs.push_back({ {x, y - gScrollY}, 0, 0.45f, r1, c }); }
+inline void FxFloat(float x, float y, const std::string& s, Color c, float fs = 26) { Fx().fs.push_back({ {x, y - gScrollY}, 0, 1.0f, fs, s, c }); }
 
 inline void FxUpdate(float dt) {
     FxState& f = Fx();
@@ -233,35 +290,101 @@ inline BtnAnim& BtnState(const std::string& label, Rectangle r) {
     uint64_t k = std::hash<std::string>()(label) * 31u + (uint64_t)(int)r.x * 7919u + (uint64_t)(int)r.y * 104729u;
     return m[k];
 }
-// Returns true on click. Hover lifts + glows, press squashes, click emits a ripple.
+// Returns true on click. 3D key-cap look: hover lifts, press sinks into its base, click emits a ripple.
 inline bool Button(Rectangle r, const std::string& label, Color col, bool enabled = true, float fs = 22, bool ghost = false) {
     float dt = GetFrameTime();
     BtnAnim& a = BtnState(label, r);
-    Vector2 m = GetMousePosition();
+    Vector2 m = Mouse();
     bool hover = enabled && CheckCollisionPointRec(m, r);
     bool down = hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
     a.hover = Smooth(a.hover, hover ? 1.0f : 0.0f, 18, dt);
     a.press = Smooth(a.press, down ? 1.0f : 0.0f, 32, dt);
-    float s = 1 + 0.03f * a.hover - 0.07f * a.press;
-    Rectangle d = ScaleRect(r, s);
-    d.y -= 2 * a.hover * (1 - a.press);
-    float rad = std::min(16.0f, d.height / 2.5f);
+    const float depth = 7;
+    float rad = std::min(16.0f, r.height / 2.5f);
+    float lift = -2 * a.hover * (1 - a.press) + 5 * a.press;      // face travel: up on hover, down on press
+    Rectangle face{ r.x, r.y + lift, r.width, r.height };
+    Color base, top, tc;
+    if (!enabled) { base = Mix(kSurface2, kBg, 0.4f); top = kSurface2; tc = kLock; }
+    else if (ghost) { base = Mix(kBorder, kBg, 0.4f); top = Mix(kSurface, col, 0.10f + 0.12f * a.hover); tc = Mix(kText, col, 0.55f); }
+    else { base = Mix(col, Color{ 0, 0, 0, 255 }, 0.42f); top = Mix(col, Color{ 255, 255, 255, 255 }, 0.10f * a.hover); tc = OnColor(col); }
     if (enabled) {
-        Shadow(d, rad, 4, 0.35f);
-        if (a.hover > 0.02f) Box({ d.x - 4 * a.hover, d.y - 4 * a.hover, d.width + 8 * a.hover, d.height + 8 * a.hover }, rad + 3, Al(col, 0.22f * a.hover));
+        Shadow({ r.x, r.y + 2, r.width, r.height }, rad, depth, 0.30f);
+        if (a.hover > 0.02f) Box({ r.x - 5 * a.hover, r.y - 5 * a.hover, r.width + 10 * a.hover, r.height + 10 * a.hover }, rad + 4, Al(col, 0.20f * a.hover));
     }
-    Color tc;
-    if (!enabled) { Box(d, rad, kSurface2); tc = kLock; }
-    else if (ghost) { BoxB(d, rad, Mix(kSurface, col, 0.12f * a.hover), Mix(kBorder, col, 0.4f + 0.6f * a.hover), 2); tc = Mix(kText, col, 0.5f); }
-    else { Box(d, rad, Mix(col, Color{ 255, 255, 255, 255 }, 0.10f * a.hover)); tc = OnColor(col); }
+    Box({ r.x, r.y + depth, r.width, r.height }, rad, base);                  // extruded side
+    if (ghost && enabled) {
+        BoxB(face, rad, top, Mix(kBorder, col, 0.45f + 0.55f * a.hover), 2);
+    }
+    else {
+        Box(face, rad, enabled ? Mix(col, Color{ 255, 255, 255, 255 }, 0.20f) : kBorder);   // lit rim
+        Box({ face.x, face.y + 2, face.width, face.height - 2 }, rad, enabled ? top : kSurface2);
+    }
     if (!label.empty()) {
-        std::string l = Fit(label, d.width - 12, fs);
-        TxtC(l, d.x + d.width / 2, d.y + (d.height - fs * 1.2f) / 2, fs, tc);
+        std::string l = Fit(label, face.width - 14, fs);
+        TxtC(l, face.x + face.width / 2, face.y + (face.height - fs * gTextScale * 1.2f) / 2, fs, tc);
     }
     bool clicked = hover && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
     if (clicked) { FxRing(m.x, m.y, col, 46); FxSparks(m.x, m.y, col, 8); }
     return clicked;
 }
+
+// ------------------------------------------------------------------ scrolling
+// Usage:  float off = sc.Begin(view, contentHeight, dt);  ...draw content at normal coordinates...  sc.End();
+// Wheel (vertical or horizontal), touchpad, PageUp/PageDown/Home/End, and a draggable scrollbar all work.
+// Inside Begin..End, Mouse() is remapped so hit-testing matches what is drawn.
+struct Scroller {
+    float cur = 0, target = 0, grab = 0, maxS = 0, contentH = 0;
+    bool drag = false, active = false;
+    Rectangle view{ 0, 0, 0, 0 };
+    void Reset() { cur = target = 0; drag = false; }
+    float Begin(Rectangle v, float contentHeight, float dt) {
+        view = v; contentH = contentHeight; maxS = std::max(0.0f, contentH - v.height);
+        Vector2 m = MouseCanvas();
+        bool hover = CheckCollisionPointRec(m, v);
+        float wheel = GetMouseWheelMoveV().y;
+        if (wheel == 0) wheel = GetMouseWheelMove();
+        if (hover && wheel != 0) target -= wheel * 70;
+        if (hover) {
+            if (IsKeyPressed(KEY_PAGE_DOWN)) target += v.height * 0.8f;
+            if (IsKeyPressed(KEY_PAGE_UP)) target -= v.height * 0.8f;
+            if (IsKeyPressed(KEY_HOME)) target = 0;
+            if (IsKeyPressed(KEY_END)) target = maxS;
+        }
+        if (maxS > 0) {                                                    // draggable scrollbar
+            float th = std::max(44.0f, v.height * v.height / contentH);
+            float thumbY = v.y + (v.height - th) * (cur / maxS);
+            Rectangle track{ v.x + v.width - 22, v.y, 22, v.height };
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(m, track)) {
+                drag = true;
+                grab = (m.y >= thumbY && m.y <= thumbY + th) ? m.y - thumbY : th / 2;
+            }
+            if (drag) {
+                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) target = cur = std::max(0.0f, std::min(maxS, (m.y - grab - v.y) / std::max(1.0f, v.height - th) * maxS));
+                else drag = false;
+            }
+        }
+        target = std::max(0.0f, std::min(maxS, target));
+        if (!drag) cur = Smooth(cur, target, 16, dt);
+        if (std::fabs(cur - target) < 0.4f) cur = target;
+        gInScroll = true; gScrollY = cur; gScrollView = v; active = true;
+        ScissorOn(v.x, v.y, v.width, v.height);
+        rlPushMatrix(); rlTranslatef(0, -cur, 0);
+        return cur;
+    }
+    void End() {
+        if (!active) return;
+        rlPopMatrix(); EndScissorMode();
+        gInScroll = false; gScrollY = 0; active = false;
+        if (maxS > 0) {                                                    // scrollbar (drawn unscrolled)
+            float th = std::max(44.0f, view.height * view.height / contentH);
+            float ty = view.y + (view.height - th) * (cur / maxS);
+            Vector2 m = MouseCanvas();
+            bool near = drag || CheckCollisionPointRec(m, { view.x + view.width - 22, view.y, 22, view.height });
+            Box({ view.x + view.width - 12, view.y + 2, 8, view.height - 4 }, 4, Al(Color{ 0, 0, 0, 255 }, near ? 0.35f : 0.18f));
+            Box({ view.x + view.width - 12, ty, 8, th }, 4, near ? kSky : kBorder);
+        }
+    }
+};
 
 // ------------------------------------------------------------------ avatar
 // Items unlock with level: L2 hat, L3 glasses, L5 scarf, L7 cape, L10 crown

@@ -10,12 +10,14 @@
 #include "Content.h"
 #include "Player.h"
 #include "UI.h"
+#include "Hard.h"
 
-enum class Screen { Menu, Map, Lesson, Result, Shop, Quests };
+enum class Screen { Menu, Map, Lesson, Result, Shop, Quests, Hard };
 
 class Game {
 public:
     Game() {
+        BuildHard();
         courses = BuildCourses();
         topics = courses[0].topics;
         dispXp = (float)p.xp; dispCoins = (float)p.coins;
@@ -30,12 +32,13 @@ public:
         dispXp = Smooth(dispXp, (float)p.xp, 7, dt);
         dispCoins = Smooth(dispCoins, (float)p.coins, 9, dt);
 
-        ClearBackground(kBg);
+        DrawBackground();
         if (IsKeyPressed(KEY_ESCAPE)) {
             p.Save();
             if (screen == Screen::Map) Go(Screen::Menu);
             else if (screen == Screen::Shop || screen == Screen::Quests) Go(from);
             else if (screen == Screen::Lesson || screen == Screen::Result) Go(Screen::Map);
+            else if (screen == Screen::Hard) EnterResult();
         }
         switch (screen) {
         case Screen::Menu:   DrawMenu(); break;
@@ -44,6 +47,7 @@ public:
         case Screen::Result: DrawResult(dt); break;
         case Screen::Shop:   DrawShop(); break;
         case Screen::Quests: DrawQuests(); break;
+        case Screen::Hard:   DrawHard(dt); break;
         }
         FxUpdate(dt); FxDraw();
 
@@ -57,7 +61,7 @@ public:
             Icon(IC_CHECK, r.x + 24, r.y + 22, 8, Al(kMint, a));
             Txt(toast, r.x + 42, r.y + 10, 20, Al(kText, a));
         }
-        if (fade > 0.001f) DrawRectangle(0, 0, (int)W, (int)H, Al(kBg, fade));
+        if (fade > 0.001f) DrawRectangle(-3000, -3000, 7100, 6700, Al(kBg, fade));
     }
 
 private:
@@ -75,7 +79,16 @@ private:
 
     // menu / map animation
     float cardHover[8] = { 0 }, rowHover[40] = { 0 }, nodeHover[40] = { 0 };
-    float listScroll = 0, listTarget = 0;
+    Scroller scMenu, scMap, scSide, scShop, scQuest, scCards, scHard;
+    // hard mode
+    const HardProblem* hard = nullptr;
+    CodeEditor editor;
+    TextJudge judge;
+    Verdict lastV;
+    bool hardRan = false, hardSolved = false;
+    int hintsShown = 0;
+    std::string hardReward;
+    float hardKnob = 0;
 
     // lesson
     struct Item {
@@ -117,7 +130,7 @@ private:
     int CourseDone(int c) const {
         std::string pre = c == 0 ? "t" : "c" + std::to_string(c) + "t";
         int n = 0;
-        for (auto& k : p.done) if (k.compare(0, pre.size(), pre) == 0) n++;
+        for (auto& k : p.done) if (k.compare(0, pre.size(), pre) == 0 && (k.size() < 4 || k.compare(k.size() - 4, 4, "hard") != 0)) n++;
         return n;
     }
     bool TopicOpen(int t) const { return t == 0 || p.unlocked.count(UnlockId(t)) || (t > 0 && p.done.count(Key(t - 1, -1))); }
@@ -155,7 +168,7 @@ private:
         correct = streak = bestStreak = 0;
         resXp = resCoins = levelUps = 0; progShown = 0; hurtT = 0;
         ResetItem();
-        inCards = !mod->lesson.empty(); cardIdx = 0; selPart = -1; cardT = 0;
+        inCards = !mod->lesson.empty(); cardIdx = 0; selPart = -1; cardT = 0; scCards.Reset();
         Go(Screen::Lesson);
     }
     // ----------------------------------------------------------- code question modes
@@ -298,7 +311,7 @@ private:
         return out;
     }
     bool Chip(Rectangle r, const std::string& label, Color tone, bool faded, float fs) {
-        Vector2 m = GetMousePosition();
+        Vector2 m = Mouse();
         if (faded) { Box(r, 12, Al(kSurface2, 0.5f)); Txt(label, r.x + 15, r.y + (r.height - fs * 1.2f) / 2, fs, Al(kLock, 0.6f), true); return false; }
         bool hover = CheckCollisionPointRec(m, r);
         Rectangle d = r; if (hover) d.y -= 2;
@@ -328,7 +341,7 @@ private:
         Rectangle box{ 150, contentTop + ph + 22, 800, std::max(74.0f, hp + 32) };
         Color edge = answered ? (wasRight ? kMint : kCoral) : kBorder;
         if (answered && !wasRight) box.x += std::sin(answerT * 48) * 12 * std::exp(-answerT * 7);
-        BoxB(box, 16, Color{ 9, 12, 20, 255 }, edge, 2);
+        Inset(box, 16, Color{ 9, 12, 20, 255 }, edge, 2);
         if (pl.empty()) Txt("Tap the pieces below to build the line", box.x + 24, box.y + box.height / 2 - 10, 17, kMuted);
         int removeAt = -1;
         for (size_t i = 0; i < pr.size(); i++) {
@@ -357,7 +370,7 @@ private:
         float ph = Wrap(c.prompt, 150, contentTop, 800, 28, Al(kText, enter), true, false, nullptr, 1.3f);
         Rectangle box{ 150, contentTop + ph + 26, 800, 74 };
         if (answered && !wasRight) box.x += std::sin(answerT * 48) * 12 * std::exp(-answerT * 7);
-        BoxB(box, 16, Color{ 9, 12, 20, 255 }, answered ? (wasRight ? kMint : kCoral) : kBorder, 2);
+        Inset(box, 16, Color{ 9, 12, 20, 255 }, answered ? (wasRight ? kMint : kCoral) : kBorder, 2);
         std::string mid = answered ? it.mid : "___";
         Color midCol = answered ? kMint : kSky;
         const Color codeCol{ 190, 255, 220, 255 };
@@ -399,7 +412,7 @@ private:
         bool last = cardIdx + 1 >= (int)cards.size();
         bool replay = p.done.count(Key(modTopic, modIdx)) > 0;
         float enter = EaseOut(cardT / 0.35f);
-        Vector2 m = GetMousePosition();
+        Vector2 m = Mouse();
         static const Color pal[5] = { kSky, kMint, kAmber, kViolet, kCoral };
 
         if (Button({ 24, 20, 48, 48 }, "", kSurface2, true, 20, true)) { p.Save(); Go(Screen::Map); return; }
@@ -408,6 +421,10 @@ private:
         Txt(Fit(modIdx < 0 ? topics[modTopic].test.title : topics[modTopic].modules[modIdx].title, 600, 22), 92, 40, 22, kText);
         if (replay && Button({ W - 24 - 120, 20, 120, 44 }, "Skip", kSky, true, 19, true)) { inCards = false; itemT = 0; return; }
 
+        float th0 = Wrap(c.text, 150, 0, 800, 21, kText, false, false, nullptr, 1.4f);
+        float chc = std::max(H - 74 - 110, 112 + 58 + th0 + 26 + (c.code.empty() ? 0.0f : 74 + 18 + 130) + 30 - 74);
+        scCards.Begin({ 0, 74, W, H - 74 - 110 }, chc, dt);
+        m = Mouse();
         float y = 112;
         Txt(Fit(c.title, 800, 36), 150, y + 12 * (1 - enter), 36, Al(kText, enter));
         y += 58;
@@ -415,7 +432,7 @@ private:
 
         if (!c.code.empty()) {
             Rectangle box{ 150, y, 800, 74 };
-            BoxB(box, 16, Color{ 9, 12, 20, 255 }, kBorder, 2);
+            Inset(box, 16, Color{ 9, 12, 20, 255 }, kBorder, 2);
             float fs = 26;
             while (fs > 14 && TxtW(c.code, fs, true) > box.width - 90) fs -= 1;
             float ty = box.y + (box.height - fs * 1.25f) / 2, x = box.x + 50;
@@ -455,15 +472,16 @@ private:
             }
         }
 
-        DrawRectangle(0, (int)(H - 110), (int)W, 110, kSurface);
-        DrawRectangle(0, (int)(H - 110), (int)W, 2, kBorder);
+        scCards.End();
+        DrawRectangle(-1500, (int)(H - 110), 4100, 110, kSurface);
+        DrawRectangle(-1500, (int)(H - 110), 4100, 2, kBorder);
         int n = (int)cards.size();
         for (int i = 0; i < n; i++)
             DrawCircleV({ W / 2 - (n - 1) * 14.0f + i * 28, H - 56 }, i == cardIdx ? 7.0f : 5.0f, i == cardIdx ? kSky : kBorder);
-        if (cardIdx > 0 && Button({ 150, H - 84, 150, 56 }, "Back", kSky, true, 21, true)) { cardIdx--; cardT = 0; selPart = -1; }
+        if (cardIdx > 0 && Button({ 150, H - 84, 150, 56 }, "Back", kSky, true, 21, true)) { cardIdx--; cardT = 0; selPart = -1; scCards.Reset(); }
         if (Button({ W - 150 - 200, H - 84, 200, 56 }, last ? "Start quiz" : "Next", kMint, true, 23) || IsKeyPressed(KEY_ENTER)) {
             if (last) { inCards = false; itemT = 0; }
-            else { cardIdx++; cardT = 0; selPart = -1; }
+            else { cardIdx++; cardT = 0; selPart = -1; scCards.Reset(); }
         }
     }
 
@@ -548,8 +566,34 @@ private:
             }
         }
         p.Save();
-        resT = 0; resBurst = false;
-        Go(Screen::Result);
+        hard = (ok && p.hardMode) ? FindHard(courses[course].name, modTopic, modIdx) : nullptr;
+        if (hard) StartHard(); else EnterResult();
+    }
+    void EnterResult() { resT = 0; resBurst = false; Go(Screen::Result); }
+
+    // ----------------------------------------------------------- hard mode
+    void StartHard() {
+        editor.SetText(hard->starter);
+        lastV = Verdict(); hardRan = false; hardSolved = false; hintsShown = 0; hardReward.clear();
+        scHard.Reset();
+        Go(Screen::Hard);
+    }
+    void RunHard() {
+        lastV = judge.Run(*hard, editor.Text());
+        hardRan = true;
+        if (!lastV.accepted || hardSolved) return;
+        hardSolved = true;
+        std::string hk = Key(modTopic, modIdx) + "hard";
+        if (!p.done.count(hk)) {
+            p.done.insert(hk);
+            resXp += hard->xp; resCoins += hard->coins; p.coins += hard->coins;
+            levelUps += p.AddXP(hard->xp);
+            p.Note(QK_CODE, 1);
+            hardReward = "+" + std::to_string(hard->xp) + " XP   +" + std::to_string(hard->coins) + " coins  (first solve)";
+        }
+        else hardReward = "Solved again. The first-solve bonus was already claimed.";
+        p.Save();
+        FxBurst(770, 300, 70); FxRing(770, 300, kMint, 120);
     }
 
     // ----------------------------------------------------------- shared top bar
@@ -560,8 +604,9 @@ private:
     }
     // returns true when the back button was clicked
     bool TopBar(const std::string& title, bool back, bool nav) {
-        DrawRectangle(0, 0, (int)W, 72, kSurface);
-        DrawRectangle(0, 72, (int)W, 2, kBorder);
+        DrawRectangle(-1500, 0, 4100, 72, kSurface);
+        DrawRectangle(-1500, 72, 4100, 2, kBorder);
+        DrawRectangleGradientV(-1500, 74, 4100, 12, Al(Color{ 0, 0, 0, 255 }, 0.35f), Al(Color{ 0, 0, 0, 255 }, 0.0f));
         bool backClicked = false;
         float x;
         if (back) {
@@ -601,10 +646,12 @@ private:
     // ----------------------------------------------------------- MAIN MENU
     void DrawMenu() {
         TopBar("JavaQuest", false, true);
+        int nc = (int)courses.size();
+        scMenu.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 190.0f + ((nc + 2) / 3) * 235 + 10 - 74), GetFrameTime());
         Txt("Choose your language", 35, 96, 36, kText);
         Txt("Short lessons, quick quizzes, real progress. Your XP and coins carry across every course.", 35, 144, 17, kMuted);
         static const char* glyph[] = { "J", "C++", "Py", "C#", "JS" };
-        Vector2 m = GetMousePosition();
+        Vector2 m = Mouse();
         float dt = GetFrameTime();
         for (int i = 0; i < (int)courses.size() && i < 8; i++) {
             const Course& c = courses[i];
@@ -613,8 +660,7 @@ private:
             cardHover[i] = Smooth(cardHover[i], hover ? 1.0f : 0.0f, 16, dt);
             float h = cardHover[i];
             Rectangle r{ base.x, base.y - 6 * h, base.width, base.height };
-            Shadow(r, 22, 8, 0.4f);
-            BoxB(r, 22, Mix(kSurface, kSurface2, h), Mix(kBorder, c.color, h), 2);
+            Card3D(r, 22, Mix(kSurface, kSurface2, h), Mix(kBorder, c.color, h), 8);
 
             Rectangle ic{ r.x + 22, r.y + 22, 64, 64 };
             Box(ic, 18, c.color);
@@ -636,63 +682,51 @@ private:
             }
             if (hover && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
                 FxRing(m.x, m.y, c.color, 70);
-                course = i; topics = c.topics; selTopic = 0; listScroll = listTarget = 0;
+                course = i; topics = c.topics; selTopic = 0; scSide.Reset(); scMap.Reset();
                 Go(Screen::Map);
             }
         }
+        scMenu.End();
     }
 
     // ----------------------------------------------------------- MAP
     void DrawMap() {
         if (TopBar(courses[course].name, true, true)) { p.Save(); Go(Screen::Menu); return; }
         float dt = GetFrameTime();
-        Vector2 m = GetMousePosition();
+        Vector2 m = Mouse();
 
         // sidebar
-        DrawRectangle(0, 74, 310, (int)H - 74, kSurface);
-        DrawRectangle(310, 74, 2, (int)H - 74, kBorder);
+        DrawRectangle(-1500, 74, 1810, 3000, kSurface);
+        DrawRectangle(310, 74, 2, 3000, kBorder);
         Txt("TOPICS", 26, 90, 14, kMuted);
         const float listTop = 116, listH = H - 116 - 142;
         int n = (int)topics.size();
-        float contentH = n * 66.0f;
-        float maxScroll = std::max(0.0f, contentH - listH);
-        bool inSide = m.x < 310 && m.y > listTop && m.y < listTop + listH;
-        if (inSide) listTarget -= GetMouseWheelMove() * 66;
-        listTarget = std::max(0.0f, std::min(maxScroll, listTarget));
-        listScroll = Smooth(listScroll, listTarget, 14, dt);
-
-        BeginScissorMode(0, (int)listTop, 310, (int)listH);
+        scSide.Begin({ 0, listTop, 310, listH }, n * 66.0f, dt);
+        Vector2 ms = Mouse();
         for (int t = 0; t < n; t++) {
-            float ry = listTop + t * 66 - listScroll;
-            if (ry + 58 < listTop || ry > listTop + listH) continue;
-            Rectangle rr{ 14, ry, 282, 58 };
+            Rectangle rr{ 14, listTop + t * 66, 268, 58 };
             bool open = TopicOpen(t), sel = t == selTopic;
-            bool hov = inSide && CheckCollisionPointRec(m, rr);
+            bool hov = CheckCollisionPointRec(ms, rr);
             if (t < 40) rowHover[t] = Smooth(rowHover[t], hov ? 1.0f : 0.0f, 16, dt);
             Color tc = topics[t].color;
-            if (sel) BoxB(rr, 14, Mix(kSurface2, tc, 0.2f), tc, 2);
+            if (sel) { Card3D(rr, 14, Mix(kSurface2, tc, 0.2f), tc, 4); }
             else Box(rr, 14, Mix(kSurface, kSurface2, t < 40 ? rowHover[t] : 0));
             float cy = rr.y + 29;
             DrawCircleV({ rr.x + 32, cy }, 18, open ? tc : kLock);
             if (open) TxtC(std::to_string(t + 1), rr.x + 32, cy - 11, 20, OnColor(tc));
             else Icon(IC_LOCK, rr.x + 32, cy - 2, 8, kText);
-            Txt(Fit(topics[t].name, 282 - 62 - 38, 17), rr.x + 62, rr.y + 8, 17, open ? kText : kMuted);
+            Txt(Fit(topics[t].name, 268 - 62 - 34, 17), rr.x + 62, rr.y + 7, 17, open ? kText : kMuted);
             int d, tot; TopicProgress(t, d, tot);
             std::string sub = topics[t].modules.empty() ? "Coming soon" : (open ? std::to_string(d) + " / " + std::to_string(tot) + " done" : "Locked");
-            Txt(sub, rr.x + 62, rr.y + 33, 13, kMuted);
+            Txt(sub, rr.x + 62, rr.y + 33, 14, kMuted);
             if (tot > 0 && d == tot) Icon(IC_CHECK, rr.x + rr.width - 24, cy, 8, kMint);
-            if (hov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { selTopic = t; FxRing(m.x, m.y, tc, 40); }
+            if (hov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { selTopic = t; scMap.Reset(); FxRing(ms.x, ms.y, tc, 40); }
         }
-        EndScissorMode();
-        if (maxScroll > 0) {
-            float th = std::max(30.0f, listH * listH / contentH);
-            float ty = listTop + (listH - th) * (listScroll / maxScroll);
-            Box({ 302, ty, 4, th }, 2, kBorder);
-        }
+        scSide.End();
 
         // character card
         Rectangle ac{ 16, H - 134, 278, 118 };
-        BoxB(ac, 18, kSurface2, kBorder, 2);
+        Card3D(ac, 18, kSurface2, kBorder, 6);
         DrawAvatar(66, ac.y + 58 + std::sin(time * 2.2f) * 2.5f, 0.6f, p.Level());
         Txt("Level " + std::to_string(p.Level()), 122, ac.y + 20, 22, kText);
         Txt(LevelTitle(p.Level()), 122, ac.y + 50, 16, kMint);
@@ -701,15 +735,33 @@ private:
         // main area
         const Topic& T = topics[selTopic];
         const float x0 = 350, cw = 716;
-        Txt(Fit(T.name, cw, 34), x0, 92, 34, T.color);
+        {
+            float bh0 = Wrap(T.blurb, x0, 138, cw, 17, kMuted, false);
+            int cnt0 = (int)T.modules.size() + 1;
+            float ch0 = (T.modules.empty() || !TopicOpen(selTopic)) ? H - 74
+                : std::max(H - 74, std::max(250.0f, 138 + bh0 + 70) + ((cnt0 + 5) / 6) * 118 + 100 - 74);
+            scMap.Begin({ 312, 74, W - 312, H - 74 }, ch0, dt);
+            m = Mouse();
+        }
+        Txt(Fit(T.name, cw - 210, 34), x0, 92, 34, T.color);
         float bh = Wrap(T.blurb, x0, 138, cw, 17, kMuted);
+        {   // hard-mode switch
+            Rectangle sw{ x0 + cw - 62, 100, 56, 30 };
+            bool hov = CheckCollisionPointRec(m, { x0 + cw - 190, 94, 190, 42 });
+            hardKnob = Smooth(hardKnob, p.hardMode ? 1.0f : 0.0f, 14, dt);
+            Txt("Hard mode", x0 + cw - 186, 104, 17, p.hardMode ? kCoral : kMuted);
+            Inset(sw, 15, Mix(kSurface2, kCoral, hardKnob * 0.6f), Mix(kBorder, kCoral, hardKnob));
+            DrawCircleV({ sw.x + 15 + hardKnob * 26, sw.y + 17 }, 10.5f, Mix(kMuted, Color{ 255, 255, 255, 255 }, hardKnob));
+            DrawCircleV({ sw.x + 15 + hardKnob * 26, sw.y + 14 }, 10.5f, Mix(Color{ 190, 198, 220, 255 }, Color{ 255, 255, 255, 255 }, hardKnob));
+            if (hov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { p.hardMode = !p.hardMode; p.Save(); Toast(p.hardMode ? "Hard mode on: modules end with a boss problem" : "Hard mode off"); }
+        }
 
         if (T.modules.empty()) {
             Rectangle r{ x0 + 100, 280, cw - 200, 190 };
             BoxB(r, 22, kSurface, kBorder, 2);
             TxtC("Content coming soon", r.x + r.width / 2, r.y + 50, 30, kText);
             TxtC("Add modules for this topic in Content.h", r.x + r.width / 2, r.y + 100, 17, kMuted);
-            return;
+            scMap.End(); return;
         }
         if (!TopicOpen(selTopic)) {
             Rectangle r{ x0 + 100, 250, cw - 200, 270 };
@@ -722,7 +774,7 @@ private:
                 p.coins -= T.cost; p.unlocked.insert(UnlockId(selTopic)); p.Save();
                 FxBurst(r.x + r.width / 2, r.y + 220, 40); Toast("Topic unlocked!");
             }
-            return;
+            scMap.End(); return;
         }
 
         // module path (snake layout)
@@ -757,13 +809,15 @@ private:
             float& hv = nodeHover[std::min(i, 39)];
             hv = Smooth(hv, (hover && open) ? 1.0f : 0.0f, 16, dt);
             bool down = hover && open && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+            if (down) c.y += 6;                                      // pressed: sinks into its base
             float s = 1 + 0.08f * hv - (down ? 0.12f : 0.0f);
             if (i == firstOpen) {                                   // pulsing "next up" glow
                 float pu = 0.5f + 0.5f * std::sin(time * 3.2f);
                 DrawCircleV(c, (rad + 10 + 6 * pu) * s, Al(T.color, 0.18f + 0.12f * pu));
             }
             Color base = done ? kMint : (open ? T.color : kLock);
-            DrawCircleV({ c.x, c.y + 6 }, rad * s, Mix(base, kBg, 0.55f));
+            DrawCircleV({ c.x, c.y + 11 }, rad * s, Mix(base, kBg, 0.62f));
+            DrawCircleV({ c.x, c.y + 6 }, rad * s, Mix(base, kBg, 0.38f));
             DrawCircleV(c, rad * s, base);
             DrawCircleV({ c.x - rad * 0.25f * s, c.y - rad * 0.3f * s }, rad * 0.45f * s, Al(Color{ 255, 255, 255, 255 }, 0.12f));
             if (done) Icon(IC_CHECK, c.x, c.y, 15 * s, kBg);
@@ -772,10 +826,18 @@ private:
             else TxtC(std::to_string(i + 1), c.x, c.y - 15 * s, 30 * s, OnColor(base));
             const std::string& title = isTest ? T.test.title : T.modules[i].title;
             TxtC(Fit(title, stepX - 8, 14), c.x, c.y + rad + 14, 14, open ? kText : kMuted);
+            if (p.hardMode && FindHard(courses[course].name, selTopic, mm)) {             // hard-mode badge
+                bool hs = p.done.count(Key(selTopic, mm) + "hard") > 0;
+                Vector2 bp{ c.x + rad * 0.72f, c.y - rad * 0.72f };
+                DrawCircleV({ bp.x, bp.y + 3 }, 13, Mix(hs ? kMint : kCoral, kBg, 0.5f));
+                DrawCircleV(bp, 13, hs ? kMint : kCoral);
+                Icon(hs ? IC_CHECK : IC_FLAME, bp.x, bp.y, 6.5f, kBg);
+            }
             if (hover && open && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(c.x, c.y, T.color, 80); StartLesson(selTopic, mm); }
         }
         Icon(IC_FLAME, x0 + 8, H - 26, 8, kAmber);
         Txt("3 correct in a row starts a COMBO: double coins!", x0 + 24, H - 36, 15, kMuted);
+        scMap.End();
     }
 
     // ----------------------------------------------------------- LESSON
@@ -785,7 +847,7 @@ private:
         itemT += dt; if (hurtT > 0) hurtT -= dt;
         const Topic& T = topics[modTopic];
         Item& it = items[cur];
-        Vector2 m = GetMousePosition();
+        Vector2 m = Mouse();
 
         // header
         if (Button({ 24, 20, 48, 48 }, "", kSurface2, true, 20, true)) { p.Save(); Go(Screen::Map); return; }
@@ -852,8 +914,8 @@ private:
                 else if (answered) txt = kMuted;
                 else { fill = Mix(kSurface, kSurface2, optHover[i]); edge = Mix(kBorder, kSky, optHover[i]); }
                 r = ScaleRect(r, sc);
-                if (!hid) Shadow(r, 16, 4, 0.3f * k);
-                BoxB(r, 16, Al(fill, k), Al(edge, k), 2);
+                if (hid) BoxB(r, 16, Al(fill, k), Al(edge, k), 2);
+                else Card3D(r, 16, fill, edge, 5);
                 Color badge = (answered && isCorrect) ? kMint : (answered && i == picked) ? kCoral : kSurface2;
                 DrawCircleV({ r.x + 34, r.y + r.height / 2 }, 16, Al(badge, k));
                 if (answered && isCorrect) Icon(IC_CHECK, r.x + 34, r.y + r.height / 2, 7, kBg);
@@ -880,7 +942,7 @@ private:
             Rectangle box{ 150, contentTop + ph + 26, 800, 74 };
             Color edge = answered ? (wasRight ? kMint : kCoral) : Mix(kBorder, kViolet, 0.5f + 0.5f * std::sin(time * 3));
             if (answered && !wasRight) box.x += std::sin(answerT * 48) * 12 * std::exp(-answerT * 7);
-            BoxB(box, 16, Color{ 9, 12, 20, 255 }, edge, 2);
+            Inset(box, 16, Color{ 9, 12, 20, 255 }, edge, 2);
             std::string shown = input;
             while (shown.size() > 1 && TxtW(shown, 24, true) > box.width - 90) shown.erase(0, 1);
             if (!answered && (int)(time * 2) % 2 == 0) shown += "|";
@@ -906,8 +968,8 @@ private:
         // bottom bar
         if (!answered) {
             Rectangle bar{ 0, H - 110, W, 110 };
-            DrawRectangle(0, (int)bar.y, (int)W, (int)bar.height, kSurface);
-            DrawRectangle(0, (int)bar.y, (int)W, 2, kBorder);
+            DrawRectangle(-1500, (int)bar.y, 4100, (int)bar.height, kSurface);
+            DrawRectangle(-1500, (int)bar.y, 4100, 2, kBorder);
             if (Button({ 150, H - 84, 170, 56 }, "Hint  (" + std::to_string(p.hints) + ")", kSky, p.hints > 0, 21, true)) UseHint();
             if (it.isCode && it.mode != 1) {
                 bool ok = it.mode == 0 ? !it.placed.empty() : !input.empty();
@@ -920,8 +982,8 @@ private:
             float panelH = 150, k = EaseOut(answerT / 0.28f);
             float y = H - panelH * k;
             Color tone = wasRight ? kMint : kCoral;
-            DrawRectangle(0, (int)y, (int)W, (int)panelH + 4, Mix(kBg, tone, 0.14f));
-            DrawRectangle(0, (int)y, (int)W, 3, tone);
+            DrawRectangle(-1500, (int)y, 4100, (int)panelH + 4, Mix(kBg, tone, 0.14f));
+            DrawRectangle(-1500, (int)y, 4100, 3, tone);
             float ic = 150 + 28;
             float pop = EaseOutBack(answerT / 0.35f);
             DrawCircleV({ ic, y + 52 }, 28 * pop, tone);
@@ -934,6 +996,105 @@ private:
             const char* label = (lives <= 0 && !wasRight) ? "Finish" : "Continue";
             if (Button({ W - 150 - 200, y + 46, 200, 58 }, label, tone, true, 23) || IsKeyPressed(KEY_ENTER)) NextItem();
         }
+    }
+
+    // ----------------------------------------------------------- HARD MODE SCREEN
+    void DrawHard(float dt) {
+        const HardProblem& H0 = *hard;
+        DrawRectangle(-1500, 0, 4100, 72, kSurface);
+        DrawRectangle(-1500, 72, 4100, 2, kBorder);
+        DrawRectangleGradientV(-1500, 74, 4100, 12, Al(Color{ 0, 0, 0, 255 }, 0.35f), Al(Color{ 0, 0, 0, 255 }, 0.0f));
+        Box({ 24, 16, 330, 40 }, 20, Al(kCoral, 0.18f));
+        Icon(IC_FLAME, 48, 36, 9, kCoral);
+        Txt("HARD MODE  -  Boss challenge", 68, 24, 16, kCoral);
+        if (Button({ W - 24 - 160, 14, 160, 46 }, hardSolved ? "Continue" : "Skip", hardSolved ? kMint : kCoral, true, 20, !hardSolved)) { EnterResult(); return; }
+
+        // ---- left: problem statement
+        Rectangle lp{ 24, 94, 436, H - 120 };
+        Card3D(lp, 20, kSurface, kBorder, 6);
+        Txt(Fit(H0.title, 290, 28), 46, 108, 28, kText);
+        Color dc = H0.difficulty == "Hard" ? kCoral : (H0.difficulty == "Medium" ? kAmber : kMint);
+        Box({ lp.x + lp.width - 24 - 104, 112, 104, 30 }, 15, Al(dc, 0.2f));
+        TxtC(H0.difficulty, lp.x + lp.width - 24 - 52, 117, 16, dc);
+
+        const float vx = 36, vy = 158, vw = 412, vh = H - 158 - 40;
+        auto content = [&](bool draw) -> float {
+            float y = 0; const float x = 46, w = 376;
+            y += Wrap(H0.statement, x, vy + y, w, 17, kText, draw, false, nullptr, 1.4f) + 20;
+            if (!H0.examples.empty()) {
+                if (draw) Txt("EXAMPLES", x, vy + y, 14, kMuted);
+                y += 26;
+                for (size_t i = 0; i < H0.examples.size(); i++) {
+                    const HardExample& ex = H0.examples[i];
+                    std::string t = "Input:  " + ex.input + "\nOutput: " + ex.output + (ex.note.empty() ? "" : "\n" + ex.note);
+                    float th = Wrap(t, 0, 0, w - 52, 15, kText, false, true);
+                    if (draw) {
+                        Rectangle b{ x, vy + y, w, th + 24 };
+                        Inset(b, 12, Color{ 9, 12, 20, 255 }, kBorder);
+                        Wrap(t, b.x + 14, b.y + 12, w - 52, 15, Color{ 190, 255, 220, 255 }, true, true);
+                        if (hardRan && i < lastV.tests.size() && lastV.tests[i] != -1)
+                            Icon(lastV.tests[i] == 1 ? IC_CHECK : IC_CROSS, b.x + b.width - 22, b.y + 20, 7, lastV.tests[i] == 1 ? kMint : kCoral);
+                    }
+                    y += th + 24 + 12;
+                }
+                y += 6;
+            }
+            if (!H0.constraints.empty()) {
+                if (draw) Txt("CONSTRAINTS", x, vy + y, 14, kMuted);
+                y += 26;
+                for (auto& c : H0.constraints) y += Wrap("-  " + c, x, vy + y, w, 16, kMuted, draw, true, nullptr, 1.4f) + 4;
+                y += 14;
+            }
+            if (hintsShown > 0) {
+                if (draw) Txt("HINTS", x, vy + y, 14, kSky);
+                y += 26;
+                for (int i = 0; i < hintsShown && i < (int)H0.hints.size(); i++) {
+                    float th = Wrap(H0.hints[i], 0, 0, w - 52, 16, kText, false);
+                    if (draw) {
+                        Box({ x, vy + y, w, th + 24 }, 12, Al(kSky, 0.12f));
+                        Icon(IC_BULB, x + 22, vy + y + 12 + th / 2, 9, kSky);
+                        Wrap(H0.hints[i], x + 44, vy + y + 12, w - 62, 16, kText);
+                    }
+                    y += th + 24 + 10;
+                }
+            }
+            return y + 20;
+            };
+        scHard.Begin({ vx, vy, vw, vh }, content(false), dt);
+        content(true);
+        scHard.End();
+
+        // ---- right: editor, console, buttons
+        std::string ext = ".txt", cn = courses[course].name;
+        if (cn == "Java") ext = ".java"; else if (cn == "C++") ext = ".cpp"; else if (cn == "Python") ext = ".py";
+        else if (cn == "C#") ext = ".cs"; else if (cn == "JavaScript") ext = ".js";
+        Rectangle ed{ 476, 94, 600, 420 };
+        Card3D(ed, 18, kSurface, kBorder, 6);
+        DrawCircleV({ 500, 116 }, 6, kCoral); DrawCircleV({ 520, 116 }, 6, kAmber); DrawCircleV({ 540, 116 }, 6, kMint);
+        Txt("Solution" + ext, 566, 106, 16, kMuted);
+        Rectangle view{ 488, 134, 576, 368 };
+        editor.Update(view, !hardSolved);
+        editor.Draw(view, !hardSolved, time);
+        if (editor.wantRun && !hardSolved) RunHard();
+
+        Rectangle con{ 476, 532, 600, 92 };
+        Card3D(con, 18, kSurface, kBorder, 5);
+        if (!hardRan) {
+            Txt("CONSOLE", con.x + 22, con.y + 14, 13, kMuted);
+            Txt("Press Run (or Ctrl+Enter) to test your solution.", con.x + 22, con.y + 42, 17, kMuted);
+        }
+        else {
+            Color vc = lastV.accepted ? kMint : kCoral;
+            Icon(lastV.accepted ? IC_CHECK : IC_CROSS, con.x + 34, con.y + 30, 10, vc);
+            Txt(lastV.accepted ? "Accepted" : "Not accepted", con.x + 62, con.y + 14, 22, vc);
+            Wrap(Fit(lastV.message, 540, 15), con.x + 62, con.y + 46, 520, 15, kText);
+            if (!hardReward.empty()) Txt(Fit(hardReward, 540, 15), con.x + 62, con.y + 66, 15, kAmber);
+        }
+        if (Button({ 476, 640, 200, 50 }, "Run", kMint, !hardSolved, 21)) RunHard();
+        if (Button({ 688, 640, 120, 50 }, "Reset", kSky, !hardSolved, 19, true)) { editor.SetText(H0.starter); hardRan = false; }
+        bool canHint = !hardSolved && hintsShown < (int)H0.hints.size() && p.hints > 0;
+        std::string hl = hintsShown >= (int)H0.hints.size() ? "No more hints" : "Hint  (" + std::to_string(p.hints) + " left)";
+        if (Button({ 820, 640, 256, 50 }, hl, kSky, canHint, 19, true)) { p.hints--; hintsShown++; p.Save(); }
     }
 
     // ----------------------------------------------------------- RESULT
@@ -953,7 +1114,7 @@ private:
             : "Review the topic and try again.", cx, 372, 18, kMuted);
 
         Rectangle card{ cx - 270, 412, 540, 120 };
-        BoxB(card, 22, kSurface, kBorder, 2);
+        Card3D(card, 22, kSurface, kBorder, 6);
         float cnt = EaseOut(resT / 0.9f);
         struct Stat { int icon; Color c; int val; const char* label; };
         Stat st[3] = { {IC_BOLT, kMint, resXp, "XP earned"}, {IC_COIN, kAmber, resCoins, "Coins"}, {IC_FLAME, kCoral, bestStreak, "Best streak"} };
@@ -979,6 +1140,7 @@ private:
     // ----------------------------------------------------------- SHOP
     void DrawShop() {
         if (TopBar("Shop", true, false)) { p.Save(); Go(from); return; }
+        scShop.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 110.0f + 3 * 148 + 70 - 74), GetFrameTime());
         struct Row { const char* name; std::string desc; int cost; bool enabled; int icon; Color c; };
         int boostCost = 60 * (p.boost + 1);
         int boostReq = 3 + 2 * p.boost;
@@ -988,14 +1150,13 @@ private:
             {"Coin boost", "+25% coins on every answer.  Needs level " + std::to_string(boostReq) + ".  Owned: " + std::to_string(p.boost) + " / 4.",
                            boostCost, p.boost < 4 && p.Level() >= boostReq, IC_COIN, kAmber},
         };
-        Vector2 m = GetMousePosition();
+        Vector2 m = Mouse();
         for (int i = 0; i < 3; i++) {
             Rectangle r{ 150, 110.0f + i * 148, 800, 128 };
             bool hov = CheckCollisionPointRec(m, r);
             cardHover[i] = Smooth(cardHover[i], hov ? 1.0f : 0.0f, 14, GetFrameTime());
             r.y -= 4 * cardHover[i];
-            Shadow(r, 20, 6, 0.35f);
-            BoxB(r, 20, Mix(kSurface, kSurface2, cardHover[i]), Mix(kBorder, rows[i].c, cardHover[i]), 2);
+            Card3D(r, 20, Mix(kSurface, kSurface2, cardHover[i]), Mix(kBorder, rows[i].c, cardHover[i]), 6);
             DrawCircleV({ r.x + 64, r.y + 64 }, 36, Al(rows[i].c, 0.18f));
             Icon(rows[i].icon, r.x + 64, r.y + 64, 20, rows[i].c);
             Txt(rows[i].name, r.x + 120, r.y + 24, 27, kText);
@@ -1009,12 +1170,14 @@ private:
             }
         }
         Txt("Earn coins from correct answers, quests and level-ups.", 150, H - 52, 16, kMuted);
+        scShop.End();
     }
 
     // ----------------------------------------------------------- QUESTS
     void DrawQuests() {
         if (TopBar("Quests", true, false)) { p.Save(); Go(from); return; }
-        Vector2 m = GetMousePosition();
+        scQuest.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 106.0f + (float)p.quests.size() * 134 + 30 - 74), GetFrameTime());
+        Vector2 m = Mouse();
         static const Color qc[4] = { kMint, kViolet, kCoral, kSky };
         for (int i = 0; i < (int)p.quests.size(); i++) {
             const Quest& q = p.quests[i];
@@ -1024,9 +1187,8 @@ private:
             r.y -= 3 * cardHover[i];
             bool can = p.CanClaim(i);
             Color col = qc[q.kind % 4];
-            Shadow(r, 20, 6, 0.35f);
             Color edge = can ? Mix(kBorder, kMint, 0.5f + 0.5f * std::sin(time * 4)) : Mix(kBorder, col, cardHover[i]);
-            BoxB(r, 20, kSurface, edge, 2);
+            Card3D(r, 20, kSurface, edge, 6);
             DrawCircleV({ r.x + 58, r.y + 59 }, 30, Al(col, 0.18f));
             Icon(can ? IC_STAR : IC_BOLT, r.x + 58, r.y + 59, 15, col);
             Txt(Fit(Player::QuestText(q), 480, 22), r.x + 110, r.y + 20, 22, kText);
@@ -1039,5 +1201,6 @@ private:
                 FxBurst(r.x + r.width - 110, r.y + 58, 40);
             }
         }
+        scQuest.End();
     }
 };

@@ -22,9 +22,9 @@ public:
     int hints = 2;        // hint tokens
     int boost = 0;        // permanent coin boost level (+25% each)
     int extraLife = 0;    // bonus hearts for the next lesson
+    bool hardMode = false;   // modules end with a hard (LeetCode style) problem
     std::set<std::string> done;   // finished modules / tests
     std::set<int> unlocked;       // topics bought with coins
-    std::set<std::string> seenCode;   // code questions whose worked example was completed
     std::vector<Quest> quests;
 
     Player() { Reset(); Load(); }
@@ -55,9 +55,6 @@ public:
             else q.progress += value;
         }
     }
-
-    bool CodeSeen(const std::string& key) const { return seenCode.count(key) > 0; }
-    void MarkCodeSeen(const std::string& key) { seenCode.insert(key); }
 
     bool CanClaim(int i) const { return quests[i].progress >= quests[i].target; }
 
@@ -91,9 +88,7 @@ public:
         for (int u : unlocked) f << ' ' << u;
         f << '\n' << done.size();
         for (auto& d : done) f << ' ' << d;
-        f << '\n' << seenCode.size();
-        for (auto& k : seenCode) f << ' ' << k;
-        f << '\n';
+        f << '\n' << (hardMode ? 1 : 0) << '\n';
     }
 
     void Load() {
@@ -108,8 +103,6 @@ public:
         unlocked.insert(0);
         f >> n; done.clear();
         for (size_t i = 0; i < n; i++) { std::string d; f >> d; done.insert(d); }
-        seenCode.clear();                       // old saves have no section: stays empty
-        if (f >> n)
-            for (size_t i = 0; i < n; i++) { std::string k; if (f >> k) seenCode.insert(k); }
+        int hm = 0; if (f >> hm) hardMode = hm != 0;      // old saves: stays off
     }
 };
