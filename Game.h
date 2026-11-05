@@ -11,14 +11,16 @@
 #include "Player.h"
 #include "UI.h"
 #include "Hard.h"
+#include "CppCourse.h"
 
-enum class Screen { Menu, Map, Lesson, Result, Shop, Quests, Hard };
+enum class Screen { Menu, Bonus, Map, Lesson, Result, Shop, Quests, Hard };
 
 class Game {
 public:
     Game() {
         BuildHard();
         courses = BuildCourses();
+        InstallCppCourse(courses);        // the full C++ course replaces the outline from Content.h
         topics = courses[0].topics;
         dispXp = (float)p.xp; dispCoins = (float)p.coins;
     }
@@ -35,13 +37,15 @@ public:
         DrawBackground();
         if (IsKeyPressed(KEY_ESCAPE)) {
             p.Save();
-            if (screen == Screen::Map) Go(Screen::Menu);
+            if (screen == Screen::Map) Go(mapFrom);
+            else if (screen == Screen::Bonus) Go(Screen::Menu);
             else if (screen == Screen::Shop || screen == Screen::Quests) Go(from);
             else if (screen == Screen::Lesson || screen == Screen::Result) Go(Screen::Map);
             else if (screen == Screen::Hard) EnterResult();
         }
         switch (screen) {
         case Screen::Menu:   DrawMenu(); break;
+        case Screen::Bonus:  DrawBonus(); break;
         case Screen::Map:    DrawMap(); break;
         case Screen::Lesson: DrawLesson(dt); break;
         case Screen::Result: DrawResult(dt); break;
@@ -72,14 +76,14 @@ private:
     std::vector<Course> courses;
     std::vector<Topic> topics;
     int course = 0, selTopic = 0;
-    Screen screen = Screen::Menu, from = Screen::Menu;
+    Screen screen = Screen::Menu, from = Screen::Menu, mapFrom = Screen::Menu;
     float time = 0, fade = 0, toastT = 0;
     std::string toast;
     float dispXp = 0, dispCoins = 0;
 
     // menu / map animation
     float cardHover[8] = { 0 }, rowHover[40] = { 0 }, nodeHover[40] = { 0 };
-    Scroller scMenu, scMap, scSide, scShop, scQuest, scCards, scHard;
+    Scroller scMenu, scBonus, scMap, scSide, scShop, scQuest, scCards, scHard;
     // hard mode
     const HardProblem* hard = nullptr;
     CodeEditor editor;
@@ -188,6 +192,11 @@ private:
                 while (j < n && s[j] != '"') { if (s[j] == '\\' && j + 1 < n) j++; j++; }
                 j = std::min(j + 1, n); out.push_back(s.substr(i, j - i)); i = j;
             }
+            else if (ch == '\'') {                                   // char literal such as '\n' stays in one piece
+                size_t j = i + 1;
+                while (j < n && s[j] != '\'') { if (s[j] == '\\' && j + 1 < n) j++; j++; }
+                j = std::min(j + 1, n); out.push_back(s.substr(i, j - i)); i = j;
+            }
             else if (std::isalnum(ch) || ch == '_') {
                 size_t j = i;
                 while (j < n && (IsIdCh(s[j]) || (s[j] == '.' && j + 1 < n && IsIdCh(s[j + 1])))) j++;
@@ -246,7 +255,8 @@ private:
         if (!mod || mod->code.accepted.empty()) return;
         const CodeTask& c = mod->code;
         const std::string& acc = c.accepted[0];
-        int want = c.mode >= 0 ? c.mode : (modTopic < 2 ? 0 : (modTopic < 4 ? 1 : 2));
+        float frac = topics.size() > 1 ? (float)modTopic / (float)topics.size() : 1.0f;   // position in the course
+        int want = c.mode >= 0 ? c.mode : (frac < 0.25f ? 0 : (frac < 0.5f ? 1 : 2));     // build -> fill -> type
         if (want == 0) {
             std::vector<std::string> toks = Tokenize(acc);
             if (toks.size() >= 2 && toks.size() <= 16) {
@@ -643,34 +653,116 @@ private:
         return backClicked;
     }
 
-    // ----------------------------------------------------------- MAIN MENU
+    // ----------------------------------------------------------- MAIN MENU / BONUS
+    int CppIndex() const { for (int i = 0; i < (int)courses.size(); i++) if (courses[i].name == "C++") return i; return 0; }
+    bool IsBonus(int i) const { return i != CppIndex(); }
+    static std::string Glyph(const std::string& n) {
+        if (n == "Java") return "J";
+        if (n == "Python") return "Py";
+        if (n == "C#") return "C#";
+        if (n == "JavaScript") return "JS";
+        return n.substr(0, 1);
+    }
+
+    void OpenCourse(int i, Screen back) {
+        course = i; topics = courses[i].topics; mapFrom = back;
+        selTopic = 0;                                                   // resume at the first unfinished open topic
+        for (int t = 0; t < (int)topics.size(); t++) {
+            if (topics[t].modules.empty() || !TopicOpen(t)) continue;
+            int d, tot; TopicProgress(t, d, tot);
+            if (d < tot) { selTopic = t; break; }
+        }
+        scSide.Reset(); scMap.Reset();
+        scSide.target = std::max(0.0f, selTopic * 66.0f - 120);
+        Go(Screen::Map);
+    }
+
     void DrawMenu() {
         TopBar("JavaQuest", false, true);
-        int nc = (int)courses.size();
-        scMenu.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 190.0f + ((nc + 2) / 3) * 235 + 10 - 74), GetFrameTime());
-        Txt("Choose your language", 35, 96, 36, kText);
-        Txt("Short lessons, quick quizzes, real progress. Your XP and coins carry across every course.", 35, 144, 17, kMuted);
-        static const char* glyph[] = { "J", "C++", "Py", "C#", "JS" };
-        Vector2 m = Mouse();
+        scMenu.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 640.0f - 74), GetFrameTime());
         float dt = GetFrameTime();
-        for (int i = 0; i < (int)courses.size() && i < 8; i++) {
+        Vector2 m = Mouse();
+        int ci = CppIndex();
+        const Course& cc = courses[ci];
+
+        Txt("Learn C++", 35, 90, 40, kText);
+        Txt("From your first program to templates and modern C++. Short lessons, quick quizzes, real progress.", 35, 142, 17, kMuted);
+
+        // ---- hero card: the C++ course
+        Rectangle base{ 35, 184, 1030, 244 };
+        bool hov = CheckCollisionPointRec(m, base);
+        cardHover[0] = Smooth(cardHover[0], hov ? 1.0f : 0.0f, 16, dt);
+        float h = cardHover[0];
+        Rectangle r{ base.x, base.y - 6 * h, base.width, base.height };
+        Card3D(r, 26, Mix(kSurface, kSurface2, h), Mix(kBorder, cc.color, h), 9);
+        Rectangle ic{ r.x + 34, r.y + 34, 136, 136 };
+        Card3D(ic, 32, cc.color, Mix(cc.color, Color{ 255, 255, 255, 255 }, 0.25f), 6);
+        TxtC("C++", ic.x + 68, ic.y + 40, 52, OnColor(cc.color));
+        Txt("The C++ Course", r.x + 204, r.y + 30, 34, kText);
+        int nTopics = (int)cc.topics.size(), total = std::max(1, cc.TotalNodes()), done = CourseDone(ci);
+        Txt(std::to_string(nTopics) + " topics  -  " + std::to_string(total) + " modules and tests  -  hard-mode boss problems", r.x + 204, r.y + 76, 16, kMuted);
+        Wrap(cc.tagline, r.x + 204, r.y + 108, 500, 17, kText, true, false, nullptr, 1.35f);
+        Bar({ r.x + 204, r.y + 178, 520, 14 }, (float)done / total, cc.color);
+        Txt(std::to_string(done) + " / " + std::to_string(total) + " modules   -   " + std::to_string(100 * done / total) + "%", r.x + 204, r.y + 202, 15, kMuted);
+        Rectangle go{ r.x + r.width - 34 - 250, r.y + (r.height - 64) / 2, 250, 64 };
+        if (Button(go, done > 0 ? "Continue" : "Start learning", kMint, true, 24)) OpenCourse(ci, Screen::Menu);
+        if (hov && !CheckCollisionPointRec(m, go) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, cc.color, 70); OpenCourse(ci, Screen::Menu); }
+
+        // ---- bonus card
+        Rectangle bb0{ 35, 462, 1030, 140 };
+        bool bhov = CheckCollisionPointRec(m, bb0);
+        cardHover[1] = Smooth(cardHover[1], bhov ? 1.0f : 0.0f, 16, dt);
+        float bh = cardHover[1];
+        Rectangle br{ bb0.x, bb0.y - 5 * bh, bb0.width, bb0.height };
+        Card3D(br, 24, Mix(kSurface, kSurface2, bh), Mix(kBorder, kViolet, bh), 8);
+        Rectangle bi{ br.x + 30, br.y + 30, 80, 80 };
+        Card3D(bi, 22, kViolet, Mix(kViolet, Color{ 255, 255, 255, 255 }, 0.25f), 5);
+        Icon(IC_STAR, bi.x + 40, bi.y + 40, 24, OnColor(kViolet));
+        Txt("Bonus languages", br.x + 136, br.y + 28, 30, kText);
+        Txt("Java, Python, C# and JavaScript. Extra practice with the same XP, coins and quests.", br.x + 136, br.y + 72, 16, kMuted);
+        int bdone = 0, btotal = 0;
+        float chipX = br.x + br.width - 40 - 4 * 76;
+        int k = 0;
+        for (int i = 0; i < (int)courses.size(); i++) {
+            if (!IsBonus(i)) continue;
+            bdone += CourseDone(i); btotal += courses[i].TotalNodes();
+            Rectangle chip{ chipX + k * 76, br.y + 36, 64, 64 };
+            Card3D(chip, 16, courses[i].color, Mix(courses[i].color, Color{ 255, 255, 255, 255 }, 0.25f), 4);
+            std::string g = Glyph(courses[i].name);
+            TxtC(g, chip.x + 32, chip.y + 18, g.size() > 2 ? 22.0f : 26.0f, OnColor(courses[i].color));
+            k++;
+        }
+        Txt(std::to_string(bdone) + " modules done in bonus courses", br.x + 136, br.y + 100, 14, kMuted);
+        if (bhov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, kViolet, 70); scBonus.Reset(); Go(Screen::Bonus); }
+        scMenu.End();
+    }
+
+    void DrawBonus() {
+        if (TopBar("Bonus languages", true, true)) { Go(Screen::Menu); return; }
+        std::vector<int> idx;
+        for (int i = 0; i < (int)courses.size(); i++) if (IsBonus(i)) idx.push_back(i);
+        int rows = ((int)idx.size() + 2) / 3;
+        scBonus.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 190.0f + rows * 235 + 10 - 74), GetFrameTime());
+        float dt = GetFrameTime();
+        Vector2 m = Mouse();
+        Txt("Bonus languages", 35, 92, 36, kText);
+        Txt("Extra practice outside the main C++ course. Progress, XP and coins are shared.", 35, 140, 17, kMuted);
+        for (int k = 0; k < (int)idx.size() && k < 8; k++) {
+            int i = idx[k];
             const Course& c = courses[i];
-            Rectangle base{ 35.0f + (i % 3) * 350, 190.0f + (i / 3) * 235, 330, 215 };
+            Rectangle base{ 35.0f + (k % 3) * 350, 190.0f + (k / 3) * 235, 330, 215 };
             bool hover = CheckCollisionPointRec(m, base);
-            cardHover[i] = Smooth(cardHover[i], hover ? 1.0f : 0.0f, 16, dt);
-            float h = cardHover[i];
+            cardHover[2 + k] = Smooth(cardHover[2 + k], hover ? 1.0f : 0.0f, 16, dt);
+            float h = cardHover[2 + k];
             Rectangle r{ base.x, base.y - 6 * h, base.width, base.height };
             Card3D(r, 22, Mix(kSurface, kSurface2, h), Mix(kBorder, c.color, h), 8);
-
             Rectangle ic{ r.x + 22, r.y + 22, 64, 64 };
-            Box(ic, 18, c.color);
-            std::string g = i < 5 ? glyph[i] : c.name.substr(0, 1);
+            Card3D(ic, 18, c.color, Mix(c.color, Color{ 255, 255, 255, 255 }, 0.25f), 4);
+            std::string g = Glyph(c.name);
             TxtC(g, ic.x + 32, ic.y + 15, g.size() > 2 ? 26.0f : 32.0f, OnColor(c.color));
             Txt(c.name, r.x + 104, r.y + 24, 28, kText);
             Txt(std::to_string(c.topics.size()) + " topics", r.x + 104, r.y + 58, 15, kMuted);
-
             Wrap(c.tagline, r.x + 22, r.y + 102, r.width - 44, 15, kMuted, true, false, nullptr, 1.3f);
-
             if (c.Ready()) {
                 int done = CourseDone(i), total = std::max(1, c.TotalNodes());
                 Bar({ r.x + 22, r.y + 166, r.width - 44, 10 }, (float)done / total, c.color);
@@ -680,18 +772,14 @@ private:
             else {
                 Txt("Coming soon - roadmap preview", r.x + 22, r.y + 180, 14, kMuted);
             }
-            if (hover && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-                FxRing(m.x, m.y, c.color, 70);
-                course = i; topics = c.topics; selTopic = 0; scSide.Reset(); scMap.Reset();
-                Go(Screen::Map);
-            }
+            if (hover && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, c.color, 70); OpenCourse(i, Screen::Bonus); }
         }
-        scMenu.End();
+        scBonus.End();
     }
 
     // ----------------------------------------------------------- MAP
     void DrawMap() {
-        if (TopBar(courses[course].name, true, true)) { p.Save(); Go(Screen::Menu); return; }
+        if (TopBar(courses[course].name, true, true)) { p.Save(); Go(mapFrom); return; }
         float dt = GetFrameTime();
         Vector2 m = Mouse();
 
