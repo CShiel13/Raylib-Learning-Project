@@ -23,6 +23,8 @@ public:
     int boost = 0;        // permanent coin boost level (+25% each)
     int extraLife = 0;    // bonus hearts for the next lesson
     bool hardMode = false;   // modules end with a hard (LeetCode style) problem
+    int gearHidden = 0;      // bit set = that unlocked gear item is switched off (see DrawAvatar)
+    int outfit = 0;          // outfit colour index 0-4
     std::set<std::string> done;   // finished modules / tests
     std::set<int> unlocked;       // topics bought with coins
     std::vector<Quest> quests;
@@ -88,7 +90,7 @@ public:
         for (int u : unlocked) f << ' ' << u;
         f << '\n' << done.size();
         for (auto& d : done) f << ' ' << d;
-        f << '\n' << (hardMode ? 1 : 0) << '\n';
+        f << '\n' << (hardMode ? 1 : 0) << ' ' << gearHidden << ' ' << outfit << '\n';
     }
 
     void Load() {
@@ -104,5 +106,6 @@ public:
         f >> n; done.clear();
         for (size_t i = 0; i < n; i++) { std::string d; f >> d; done.insert(d); }
         int hm = 0; if (f >> hm) hardMode = hm != 0;      // old saves: stays off
+        int gh = 0, oc = 0; if (f >> gh >> oc) { gearHidden = gh; outfit = ((oc % 5) + 5) % 5; }
     }
 };
