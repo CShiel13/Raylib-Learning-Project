@@ -14,10 +14,10 @@
 #include "Hard.h"
 #include "CppCourse.h"
 
-// Optional easter egg: if Sh2Mode.h exists it is compiled in; delete the file and the game builds without it.
+// Optional easter egg: if ee/mode.h exists it is compiled in; delete the folder and the game builds without it.
 #if defined(__has_include)
-#  if __has_include("Sh2Mode.h")
-#    include "Sh2Mode.h"
+#  if __has_include("ee/mode.h")
+#    include "ee/mode.h"
 #    define JQ_SH2 1
 #  endif
 #endif
@@ -762,7 +762,7 @@ private:
 
     void DrawBonus() {
 #ifdef JQ_SH2
-        if (konami.Feed()) { sh2mode = std::make_unique<sh2::Mode>(); return; }   // Up Up Down Down Left Right Left Right B A
+        if (konami.Feed()) { sh2mode = std::make_unique<sh2::Mode>(&courses[CppIndex()].topics); return; }   // Up Up Down Down Left Right Left Right B A
 #endif
         if (TopBar("Bonus languages", true, true)) { Go(Screen::Menu); return; }
         std::vector<int> idx;
