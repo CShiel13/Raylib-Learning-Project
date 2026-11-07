@@ -328,6 +328,22 @@ inline bool Button(Rectangle r, const std::string& label, Color col, bool enable
     return clicked;
 }
 
+// Shared chrome for screens with a title in the 72px top bar.
+inline void DrawHeaderBackground() {
+    DrawRectangle(-1500, 0, 4100, 72, kSurface);
+    DrawRectangle(-1500, 72, 4100, 2, kBorder);
+    DrawRectangleGradientV(-1500, 74, 4100, 12, Al(Color{ 0, 0, 0, 255 }, 0.35f), Al(Color{ 0, 0, 0, 255 }, 0.0f));
+}
+inline bool DrawHeaderBackButton(bool enabled = true) {
+    bool clicked = Button({ 24, 14, 44, 44 }, "", kSurface2, enabled, 24, true);
+    DrawLineEx({ 50, 26 }, { 40, 36 }, 3, kText);
+    DrawLineEx({ 40, 36 }, { 50, 46 }, 3, kText);
+    return clicked;
+}
+inline void DrawHeaderTitle(const std::string& title, bool hasBackButton) {
+    Txt(Fit(title, 300, 28), hasBackButton ? 84.0f : 76.0f, 18, 28, kText);
+}
+
 // ------------------------------------------------------------------ scrolling
 // Usage:  float off = sc.Begin(view, contentHeight, dt);  ...draw content at normal coordinates...  sc.End();
 // Wheel (vertical or horizontal), touchpad, PageUp/PageDown/Home/End, and a draggable scrollbar all work.

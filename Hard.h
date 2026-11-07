@@ -147,12 +147,13 @@ struct CodeEditor {
     int line = 0, col = 0;
     float scroll = 0;
     bool wantRun = false;                            // set when Ctrl+Enter was pressed
+    bool inputTruncated = false;                     // sticky until SetText; shared by course and Practice editors
 
     void SetText(const std::string& t) {
         lines.clear(); std::string cur;
         for (char c : t) { if (c == '\n') { lines.push_back(cur); cur.clear(); } else if (c != '\r') cur += c; }
         lines.push_back(cur);
-        line = col = 0; scroll = 0; wantRun = false;
+        line = col = 0; scroll = 0; wantRun = false; inputTruncated = false;
         // put the caret on a fresh indented line under the "your code here" comment
         for (size_t i = 0; i < lines.size(); i++) if (lines[i].find("your code here") != std::string::npos) {
             size_t ind = 0; while (ind < lines[i].size() && lines[i][ind] == ' ') ind++;
@@ -167,7 +168,10 @@ struct CodeEditor {
     void Insert(const std::string& s) {
         for (char c : s) {
             if (c == '\n') NewLine();
-            else if (c >= 32 && c <= 126 && lines[line].size() < 220) lines[line].insert(col++, 1, c);
+            else if (c >= 32 && c <= 126) {
+                if (lines[line].size() < 220) lines[line].insert(col++, 1, c);
+                else inputTruncated = true;
+            }
         }
     }
     void NewLine() {
@@ -266,5 +270,11 @@ struct CodeEditor {
             }
         }
         EndScissorMode();
+        if (inputTruncated) {
+            float warningWidth = std::min(360.0f, view.width - 16.0f);
+            Rectangle warning{ view.x + 8, view.y + view.height - 30, warningWidth, 24 };
+            Box(warning, 7, Al(kAmber, 0.96f));
+            Txt("Text truncated: 220 character line limit", warning.x + 8, warning.y + 4, 12, kBg);
+        }
     }
 };

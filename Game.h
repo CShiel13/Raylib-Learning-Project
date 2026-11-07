@@ -12,6 +12,7 @@
 #include "Player.h"
 #include "UI.h"
 #include "Hard.h"
+#include "Practice.h"
 #include "CppCourse.h"
 
 // Optional easter egg: if ee/mode.h exists it is compiled in; delete the folder and the game builds without it.
@@ -22,7 +23,7 @@
 #  endif
 #endif
 
-enum class Screen { Menu, Bonus, Map, Lesson, Result, Shop, Quests, Hard, Character };
+enum class Screen { Menu, Bonus, Map, Lesson, Result, Shop, Quests, Hard, Character, Practice };
 
 class Game {
 public:
@@ -33,7 +34,7 @@ public:
         topics = courses[0].topics;
         dispXp = (float)p.xp; dispCoins = (float)p.coins;
     }
-    void SaveNow() const { p.Save(); }
+    void SaveNow() const { if (screen != Screen::Practice) p.Save(); }
 
     void Frame() {
         float dt = GetFrameTime(); if (dt > 0.05f) dt = 0.05f;
@@ -51,12 +52,13 @@ public:
 
         DrawBackground();
         if (IsKeyPressed(KEY_ESCAPE)) {
-            p.Save();
+            if (screen != Screen::Practice) p.Save();
             if (screen == Screen::Map) Go(mapFrom);
             else if (screen == Screen::Bonus) Go(Screen::Menu);
             else if (screen == Screen::Shop || screen == Screen::Quests || screen == Screen::Character) Go(from);
             else if (screen == Screen::Lesson || screen == Screen::Result) Go(Screen::Map);
             else if (screen == Screen::Hard) EnterResult();
+            else if (screen == Screen::Practice) Go(practiceFrom);
         }
         switch (screen) {
         case Screen::Menu:   DrawMenu(); break;
@@ -68,6 +70,7 @@ public:
         case Screen::Quests: DrawQuests(); break;
         case Screen::Hard:   DrawHard(dt); break;
         case Screen::Character: DrawCharacter(); break;
+        case Screen::Practice: if (practice.Draw(dt) == PracticeAction::Back) Go(practiceFrom); break;
         }
         FxUpdate(dt); FxDraw();
 
@@ -93,6 +96,8 @@ private:
     std::vector<Topic> topics;
     int course = 0, selTopic = 0;
     Screen screen = Screen::Menu, from = Screen::Menu, mapFrom = Screen::Menu;
+    Screen practiceFrom = Screen::Menu;
+    EndlessPractice practice;
     float time = 0, fade = 0, toastT = 0;
     std::string toast;
     float dispXp = 0, dispCoins = 0;
@@ -635,14 +640,11 @@ private:
     }
     // returns true when the back button was clicked
     bool TopBar(const std::string& title, bool back, bool nav) {
-        DrawRectangle(-1500, 0, 4100, 72, kSurface);
-        DrawRectangle(-1500, 72, 4100, 2, kBorder);
-        DrawRectangleGradientV(-1500, 74, 4100, 12, Al(Color{ 0, 0, 0, 255 }, 0.35f), Al(Color{ 0, 0, 0, 255 }, 0.0f));
+        DrawHeaderBackground();
         bool backClicked = false;
         float x;
         if (back) {
-            backClicked = Button({ 24, 14, 44, 44 }, "", kSurface2, true, 24, true);
-            DrawLineEx({ 50, 26 }, { 40, 36 }, 3, kText); DrawLineEx({ 40, 36 }, { 50, 46 }, 3, kText);
+            backClicked = DrawHeaderBackButton();
             x = 84;
         }
         else {
@@ -650,7 +652,11 @@ private:
             TxtC("{}", 44, 22, 22, Color{ 255, 255, 255, 255 }, true);
             x = 76;
         }
-        Txt(Fit(title, 300, 28), x, 18, 28, kText);
+        if (back) DrawHeaderTitle(title, true);
+        else {
+            // Preserve the existing logo in the no-back top bar.
+            Txt(Fit(title, 300, 28), x, 18, 28, kText);
+        }
 
         float cx = W - 24;
         if (nav) {
@@ -702,47 +708,47 @@ private:
 
     void DrawMenu() {
         TopBar("JavaQuest", false, true);
-        scMenu.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 640.0f - 74), GetFrameTime());
+        scMenu.Begin({ 0, 74, W, H - 74 }, H - 74, GetFrameTime());
         float dt = GetFrameTime();
         Vector2 m = Mouse();
         int ci = CppIndex();
         const Course& cc = courses[ci];
 
-        Txt("Learn C++", 35, 90, 40, kText);
-        Txt("From your first program to templates and modern C++. Short lessons, quick quizzes, real progress.", 35, 142, 17, kMuted);
+        Txt("Learn C++", 35, 82, 36, kText);
+        Txt("From your first program to modern C++. Short lessons, quick quizzes, real progress.", 35, 126, 15, kMuted);
 
         // ---- hero card: the C++ course
-        Rectangle base{ 35, 184, 1030, 244 };
+        Rectangle base{ 35, 158, 1030, 194 };
         bool hov = CheckCollisionPointRec(m, base);
         cardHover[0] = Smooth(cardHover[0], hov ? 1.0f : 0.0f, 16, dt);
         float h = cardHover[0];
         Rectangle r{ base.x, base.y - 6 * h, base.width, base.height };
         Card3D(r, 26, Mix(kSurface, kSurface2, h), Mix(kBorder, cc.color, h), 9);
-        Rectangle ic{ r.x + 34, r.y + 34, 136, 136 };
+        Rectangle ic{ r.x + 28, r.y + 36, 122, 122 };
         Card3D(ic, 32, cc.color, Mix(cc.color, Color{ 255, 255, 255, 255 }, 0.25f), 6);
-        TxtC("C++", ic.x + 68, ic.y + 40, 52, OnColor(cc.color));
-        Txt("The C++ Course", r.x + 204, r.y + 30, 34, kText);
+        TxtC("C++", ic.x + 61, ic.y + 36, 46, OnColor(cc.color));
+        Txt("The C++ Course", r.x + 180, r.y + 16, 30, kText);
         int nTopics = (int)cc.topics.size(), total = std::max(1, cc.TotalNodes()), done = CourseDone(ci);
-        Txt(std::to_string(nTopics) + " topics  -  " + std::to_string(total) + " modules and tests  -  hard-mode boss problems", r.x + 204, r.y + 76, 16, kMuted);
-        Wrap(cc.tagline, r.x + 204, r.y + 108, 500, 17, kText, true, false, nullptr, 1.35f);
-        Bar({ r.x + 204, r.y + 178, 520, 14 }, (float)done / total, cc.color);
-        Txt(std::to_string(done) + " / " + std::to_string(total) + " modules   -   " + std::to_string(100 * done / total) + "%", r.x + 204, r.y + 202, 15, kMuted);
-        Rectangle go{ r.x + r.width - 34 - 250, r.y + (r.height - 64) / 2, 250, 64 };
-        if (Button(go, done > 0 ? "Continue" : "Start learning", kMint, true, 24)) OpenCourse(ci, Screen::Menu);
+        Txt(std::to_string(nTopics) + " topics | " + std::to_string(total) + " modules and tests | hard-mode problems", r.x + 180, r.y + 54, 14, kMuted);
+        Wrap(cc.tagline, r.x + 180, r.y + 78, 530, 15, kText, true, false, nullptr, 1.25f);
+        Bar({ r.x + 180, r.y + 143, 500, 12 }, (float)done / total, cc.color);
+        Txt(std::to_string(done) + " / " + std::to_string(total) + " modules | " + std::to_string(100 * done / total) + "%", r.x + 180, r.y + 163, 13, kMuted);
+        Rectangle go{ r.x + r.width - 30 - 230, r.y + (r.height - 60) / 2, 230, 60 };
+        if (Button(go, done > 0 ? "Continue" : "Start learning", kMint, true, 22)) OpenCourse(ci, Screen::Menu);
         if (hov && !CheckCollisionPointRec(m, go) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, cc.color, 70); OpenCourse(ci, Screen::Menu); }
 
         // ---- bonus card
-        Rectangle bb0{ 35, 462, 1030, 140 };
+        Rectangle bb0{ 35, 368, 1030, 112 };
         bool bhov = CheckCollisionPointRec(m, bb0);
         cardHover[1] = Smooth(cardHover[1], bhov ? 1.0f : 0.0f, 16, dt);
         float bh = cardHover[1];
         Rectangle br{ bb0.x, bb0.y - 5 * bh, bb0.width, bb0.height };
         Card3D(br, 24, Mix(kSurface, kSurface2, bh), Mix(kBorder, kViolet, bh), 8);
-        Rectangle bi{ br.x + 30, br.y + 30, 80, 80 };
+        Rectangle bi{ br.x + 24, br.y + 24, 64, 64 };
         Card3D(bi, 22, kViolet, Mix(kViolet, Color{ 255, 255, 255, 255 }, 0.25f), 5);
-        Icon(IC_STAR, bi.x + 40, bi.y + 40, 24, OnColor(kViolet));
-        Txt("Bonus languages", br.x + 136, br.y + 28, 30, kText);
-        Txt("Java, Python, C# and JavaScript. Extra practice with the same XP, coins and quests.", br.x + 136, br.y + 72, 16, kMuted);
+        Icon(IC_STAR, bi.x + 32, bi.y + 32, 20, OnColor(kViolet));
+        Txt("Bonus languages", br.x + 112, br.y + 14, 26, kText);
+        Wrap("Java, Python, C# and JavaScript courses with shared rewards.", br.x + 112, br.y + 51, 530, 14, kMuted, true, false, nullptr, 1.2f);
         int bdone = 0, btotal = 0;
         float chipX = br.x + br.width - 40 - 4 * 76;
         int k = 0;
@@ -755,8 +761,31 @@ private:
             TxtC(g, chip.x + 32, chip.y + 18, g.size() > 2 ? 22.0f : 26.0f, OnColor(courses[i].color));
             k++;
         }
-        Txt(std::to_string(bdone) + " modules done in bonus courses", br.x + 136, br.y + 100, 14, kMuted);
+        Txt(std::to_string(bdone) + " modules done in bonus courses", br.x + 112, br.y + 84, 12, kMuted);
         if (bhov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, kViolet, 70); scBonus.Reset(); Go(Screen::Bonus); }
+
+        // ---- independent endless practice card, below both course cards
+        Rectangle pb0{ 35, 496, 1030, 158 };
+        bool phov = CheckCollisionPointRec(m, pb0);
+        cardHover[7] = Smooth(cardHover[7], phov ? 1.0f : 0.0f, 16, dt);
+        float ph = cardHover[7];
+        Rectangle pr{ pb0.x, pb0.y - 5 * ph, pb0.width, pb0.height };
+        Card3D(pr, 24, Mix(kSurface, kSurface2, ph), Mix(kBorder, kSky, ph), 8);
+        Rectangle pi{ pr.x + 24, pr.y + 38, 76, 76 };
+        Card3D(pi, 22, kSky, Mix(kSky, Color{ 255, 255, 255, 255 }, 0.25f), 5);
+        Icon(IC_STAR, pi.x + 38, pi.y + 38, 21, OnColor(kSky));
+        Txt("Endless Practice", pr.x + 124, pr.y + 18, 28, kText);
+        Rectangle practiceGo{ pr.x + pr.width - 250 - 30, pr.y + 39, 250, 62 };
+        float practiceTextW = practiceGo.x - (pr.x + 124) - 22;
+        Wrap("Draw C++ to recreate generated colour grids. Unlimited retries and free hints.",
+            pr.x + 124, pr.y + 57, practiceTextW, 14, kMuted, true, false, nullptr, 1.2f);
+        Txt("C++ practice subset | separate from course progress", pr.x + 124, pr.y + 119, 13, kSky);
+        if (Button(practiceGo, "Start practicing", kSky, true, 21)) {
+            practice.Start(); practiceFrom = Screen::Menu; Go(Screen::Practice);
+        }
+        if (phov && !CheckCollisionPointRec(m, practiceGo) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            FxRing(m.x, m.y, kSky, 70); practice.Start(); practiceFrom = Screen::Menu; Go(Screen::Practice);
+        }
         scMenu.End();
     }
 
@@ -1119,9 +1148,7 @@ private:
     // ----------------------------------------------------------- HARD MODE SCREEN
     void DrawHard(float dt) {
         const HardProblem& H0 = *hard;
-        DrawRectangle(-1500, 0, 4100, 72, kSurface);
-        DrawRectangle(-1500, 72, 4100, 2, kBorder);
-        DrawRectangleGradientV(-1500, 74, 4100, 12, Al(Color{ 0, 0, 0, 255 }, 0.35f), Al(Color{ 0, 0, 0, 255 }, 0.0f));
+        DrawHeaderBackground();
         Box({ 24, 16, 330, 40 }, 20, Al(kCoral, 0.18f));
         Icon(IC_FLAME, 48, 36, 9, kCoral);
         Txt("HARD MODE  -  Boss challenge", 68, 24, 16, kCoral);
