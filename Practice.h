@@ -15,7 +15,20 @@
 
 enum class PracticeAction { None, Back };
 
-class EndlessPractice {
+inline std::string NormalizePracticeOutput(const std::string& text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (size_t i=0;i<text.size();++i) {
+        if (text[i]=='\r') { normalized+='\n'; if(i+1<text.size()&&text[i+1]=='\n') ++i; }
+        else normalized+=text[i];
+    }
+    return normalized;
+}
+inline bool PracticeTextMatches(const std::string& actual, const std::string& expected) {
+    return NormalizePracticeOutput(actual) == NormalizePracticeOutput(expected);
+}
+
+class PracticeModeSession {
     enum CellColour : unsigned char { Empty, Red, Blue, Yellow, Green, Purple };
     struct Puzzle {
         int size = 4;
@@ -44,6 +57,10 @@ class EndlessPractice {
     bool confirmNewPuzzle = false;
     std::future<PracticeRunResult> runTask;
     const PracticeLanguageRunner* runner = &ActivePracticeLanguage();
+    PracticeRunMode mode;
+    std::vector<std::string> textTarget;
+    std::string textOutput;
+    int textStyle = 0;
 
     struct CompilerDiagnostic { std::string primary, source, caret; };
     static CompilerDiagnostic FindCompilerDiagnostic(const std::string& message) {
@@ -98,6 +115,31 @@ class EndlessPractice {
         puzzle.seed = (unsigned)GetRandomValue(1, 0x7fffffff);
         rng = puzzle.seed;
         puzzle.size = std::min(12, 4 + (int)(puzzlesSolved / 3));
+        if (mode == PracticeRunMode::PrintOutput) {
+            int complexity = (int)puzzlesSolved;
+            if (complexity > 2 && NextRandom() % 5 == 0) complexity = std::max(0, complexity - 2);
+            int rows = std::min(9, 5 + complexity / 3);
+            textStyle = complexity % 4;
+            static const char symbols[] = { '*', '#', '+', '@', '%' };
+            char symbol = symbols[NextRandom() % 5];
+            textTarget.clear();
+            for (int y = 0; y < rows; ++y) {
+                int width = textStyle == 0 ? rows : (2 * rows - 1);
+                int fill = 0;
+                if (textStyle == 0) fill = y + 1;
+                else if (textStyle == 1) fill = 2 * y + 1;
+                else if (textStyle == 2) fill = 2 * (std::min(y, rows - 1 - y)) + 1;
+                else fill = 2 * (rows - 1 - std::min(y, rows - 1 - y)) + 1;
+                fill = std::min(width, fill);
+                int indent = textStyle == 0 ? 0 : (width - fill) / 2;
+                std::string line((size_t)indent, ' ');
+                line.append((size_t)fill, symbol);
+                textTarget.push_back(line);
+            }
+            textOutput.clear();
+            std::string starter = "// Print with print(\"text\"), print(value), or printLine(value).\n";
+            editor.SetText(starter);
+        }
         puzzle.style = (int)(puzzlesSolved % 5);
         puzzle.colourCount = std::min(5, 1 + (int)(puzzlesSolved / 2));
         puzzle.cells.assign((size_t)puzzle.size * puzzle.size, Empty);
@@ -121,27 +163,29 @@ class EndlessPractice {
         hintsShown = 0;
         hasOutput = false;
         lastOutput.clear(); solvedCurrent = false; runMessage.clear(); runPassed = false; compileError = false; runFailed = false;
-        editor.SetText(runner->StarterCode());
+        if (mode == PracticeRunMode::GridDrawing) editor.SetText(runner->StarterCode());
         confirmNewPuzzle = false;
     }
 
     bool DependenciesReady() const { return runner->Available(); }
     void RequestNewPuzzle() {
         if (runActive) return;
-        if (editor.Text() != runner->StarterCode()) confirmNewPuzzle = true;
+        const std::string starter = mode == PracticeRunMode::GridDrawing ? runner->StarterCode() : "// Print with print(\"text\"), print(value), or printLine(value).\n";
+        if (editor.Text() != starter) confirmNewPuzzle = true;
         else NewPuzzle();
     }
     void StartRun() {
         if (!DependenciesReady() || runActive) return;
         std::string submitted = editor.Text();
-        const int side = puzzle.size;
+        const int side = mode == PracticeRunMode::GridDrawing ? puzzle.size : 0;
         runRevision = puzzleRevision;
         runMessage = "Compiling " + runner->LanguageName() + " subset..."; runPassed = false; compileError = false; runFailed = false;
         hasOutput = false; lastOutput.clear(); runActive = true;
         try {
             const PracticeLanguageRunner* selectedRunner = runner;
-            runTask = std::async(std::launch::async, [selectedRunner, submitted = std::move(submitted), side]() {
-                try { return selectedRunner->Run(submitted, side); }
+            PracticeRunMode selectedMode = mode;
+            runTask = std::async(std::launch::async, [selectedRunner, submitted = std::move(submitted), side, selectedMode]() {
+                try { return selectedRunner->Run(submitted, side, selectedMode); }
                 catch (const std::exception& e) { PracticeRunResult r; r.message = std::string("Runner error: ") + e.what(); return r; }
                 catch (...) { PracticeRunResult r; r.message = "Runner failed unexpectedly."; return r; }
             });
@@ -158,8 +202,12 @@ class EndlessPractice {
         compileError = result.compileError;
         runFailed = !result.success;
         if (!result.success) return;
-        hasOutput = true; lastOutput = std::move(result.cells);
-        runPassed = PracticeGridMatches(lastOutput, puzzle.cells);
+        hasOutput = true; lastOutput = std::move(result.cells); textOutput = std::move(result.learnerOutput);
+        if (mode == PracticeRunMode::PrintOutput) {
+            std::string expected;
+            for (const std::string& row : textTarget) { expected+=row; expected+='\n'; }
+            runPassed = PracticeTextMatches(textOutput, expected);
+        } else runPassed = PracticeGridMatches(lastOutput, puzzle.cells);
         if (runPassed) {
             if (!solvedCurrent) {
                 puzzlesSolved++;
@@ -169,7 +217,7 @@ class EndlessPractice {
                 FxBurst(325, 247, 24);
             } else runMessage = "Already solved. Session progress is unchanged.";
         } else {
-            runMessage = "Grid does not match yet. You can run it again.";
+            runMessage = mode == PracticeRunMode::PrintOutput ? "Text does not match yet. Spaces are significant; visible dots mark spaces." : "Grid does not match yet. You can run it again.";
             FxRing(325, 247, kCoral, 76);
         }
     }
@@ -196,6 +244,12 @@ class EndlessPractice {
         Txt(ColourName(colour), x + 19, y - 1, 12, kMuted);
     }
     std::string HintText() const {
+        if (mode == PracticeRunMode::PrintOutput) {
+            static const char* shapes[] = { "a left-aligned triangle", "a centered pyramid", "a diamond", "an hourglass" };
+            if (hintsShown <= 1) return std::string("Hint 1: Print each row with ") + std::to_string(textTarget.size()) + " characters. Spaces are part of the shape.";
+            if (hintsShown == 2) return std::string("Hint 2: The pattern is ") + shapes[textStyle] + ".";
+            return std::string("Hint ") + std::to_string(hintsShown) + ": Use printLine for each row; the symbol is " + (textTarget.empty()?"*":std::string(1, textTarget[0].find_first_not_of(' ') == std::string::npos ? '*' : textTarget[0][textTarget[0].find_first_not_of(' ')])) + ".";
+        }
         if (hintsShown == 0) return "Hint 1: Use loops to visit the grid; draw only the coloured cells.";
         if (hintsShown == 1) {
             static const char* styles[] = { "two diagonals", "a plus-shaped cross", "a border frame", "a sparse pattern", "scattered coloured cells" };
@@ -209,6 +263,7 @@ class EndlessPractice {
     }
 
 public:
+    explicit PracticeModeSession(PracticeRunMode selectedMode) : mode(selectedMode) {}
     void Start() {
         if (!started) { started = true; puzzlesSolved = 0; MakePuzzle(); }
         else RequestNewPuzzle();
@@ -220,27 +275,50 @@ public:
         DrawHeaderBackground();
         if (DrawHeaderBackButton(!confirmNewPuzzle)) return PracticeAction::Back;
         DrawHeaderTitle("Endless Practice", true);
-        Txt("Level " + std::to_string(puzzlesSolved / 3 + 1) + " | " + std::to_string(puzzlesSolved) + " solved this session", 84, 47, 14, kMuted);
+        Txt(std::string(mode == PracticeRunMode::GridDrawing ? "Grid Drawing" : "Print Output") + " | Level " + std::to_string(puzzlesSolved / 3 + 1) + " | " + std::to_string(puzzlesSolved) + " solved this session", 84, 47, 14, kMuted);
         if (Button({ 1100 - 24 - 160, 14, 160, 46 }, "New puzzle", kViolet, !runActive && !confirmNewPuzzle, 20, true)) RequestNewPuzzle();
 
         Rectangle left{ 24, 90, 390, 526 };
         Card3D(left, 20, kSurface, kBorder, 5);
         Txt("Target", 43, 112, 18, kText);
-        Txt("Last output", 229, 112, 18, kText);
+        Txt(mode == PracticeRunMode::PrintOutput ? "Your output" : "Last output", 229, 112, 18, kText);
         float gridSide = 164.0f;
-        DrawGrid(57, 165, gridSide, true);
-        DrawGrid(243, 165, gridSide, false);
+        if (mode == PracticeRunMode::GridDrawing) {
+            DrawGrid(57, 165, gridSide, true);
+            DrawGrid(243, 165, gridSide, false);
+        } else {
+            auto visible = [](const std::string& line) { std::string s=line; for(char& c:s) if(c==' ') c='.'; return s; };
+            for (size_t i=0;i<textTarget.size()&&i<9;++i) Txt(visible(textTarget[i]), 43, 153+(float)i*19, 12, kText, true);
+            std::string displayOutput = NormalizePracticeOutput(textOutput);
+            std::vector<std::string> outLines; size_t start=0;
+            while(start<=displayOutput.size()) { size_t end=displayOutput.find('\n',start); outLines.push_back(displayOutput.substr(start,end==std::string::npos?end:end-start)); if(end==std::string::npos)break; start=end+1; }
+            for (size_t i=0;i<outLines.size()&&i<9;++i) {
+                std::string line = outLines[i].size() > 19 ? outLines[i].substr(0,16) + "..." : outLines[i];
+                Txt(visible(line), 229, 153+(float)i*19, 12, hasOutput?kText:kMuted, true);
+            }
+        }
         Txt("Guaranteed solvable", 43, 340, 14, kMint);
         Txt(hasOutput ? (runPassed ? "Correct!" : "Ran") : (runMessage.empty() ? "No run yet" : "No output"),
             229, 340, 14, hasOutput ? (runPassed ? kMint : kMuted) : kMuted);
         DrawLineEx({ 42, 367 }, { 396, 367 }, 1, kBorder);
-        Txt(runner->LanguageName() + " subset | colour key", 43, 378, 18, kText);
-        DrawLegendItem(43, 407, Red); DrawLegendItem(151, 407, Blue); DrawLegendItem(268, 407, Yellow);
-        DrawLegendItem(43, 432, Green); DrawLegendItem(151, 432, Purple);
-        Txt("Grid labels: x across, y down; both start at 0.", 43, 461, 12, kMuted);
+        if (mode == PracticeRunMode::GridDrawing) {
+            Txt(runner->LanguageName() + " subset | colour key", 43, 378, 18, kText);
+            DrawLegendItem(43, 407, Red); DrawLegendItem(151, 407, Blue); DrawLegendItem(268, 407, Yellow);
+            DrawLegendItem(43, 432, Green); DrawLegendItem(151, 432, Purple);
+            Txt("Grid labels: x across, y down; both start at 0.", 43, 461, 12, kMuted);
+        } else {
+            Txt("Print subset | spaces shown as dots", 43, 378, 17, kText);
+            Txt("Compare every character and line exactly.", 43, 407, 12, kMuted);
+            Txt("Dots in previews stand for spaces.", 43, 432, 12, kMuted);
+        }
         Txt("Unlimited attempts. Practice hints are free.", 43, 490, 13, kSky);
-        Txt("No headers or standard library. Write statements", 43, 515, 12, kMuted);
-        Txt("inside solution().", 43, 533, 12, kMuted);
+        if (mode == PracticeRunMode::GridDrawing) {
+            Txt("No headers or standard library. Write statements", 43, 515, 12, kMuted);
+            Txt("inside solution().", 43, 533, 12, kMuted);
+        } else {
+            Txt("Use print(text/value) or printLine(value).", 43, 515, 12, kMuted);
+            Txt("Loops and integer values are supported.", 43, 533, 12, kMuted);
+        }
         Txt("Puzzle seed: " + std::to_string(puzzle.seed), 43, 574, 13, kLock);
 
         Rectangle right{ 430, 90, 646, 526 };
@@ -306,6 +384,39 @@ public:
             if (Button({ dialog.x + 238, dialog.y + 116, 198, 46 }, "Discard code", kCoral, true, 16, true)) NewPuzzle();
         }
         (void)dt;
+        return PracticeAction::None;
+    }
+};
+
+// The chooser is outside either session. Each mode owns a complete independent
+// PracticeModeSession, including its editor, puzzle, hints and solved count.
+class EndlessPractice {
+    PracticeModeSession drawing{ PracticeRunMode::GridDrawing };
+    PracticeModeSession printing{ PracticeRunMode::PrintOutput };
+    bool choosing = false;
+    PracticeModeSession* active = nullptr;
+public:
+    void Start() { choosing = true; active = nullptr; }
+    PracticeAction Draw(float dt) {
+        if (!choosing && active) return active->Draw(dt);
+        DrawHeaderBackground();
+        if (DrawHeaderBackButton()) { choosing = false; return PracticeAction::Back; }
+        DrawHeaderTitle("Endless Practice", true);
+        Txt("Choose a practice mode", 84, 47, 14, kMuted);
+        Rectangle a{ 90, 170, 420, 330 }, b{ 590, 170, 420, 330 };
+        Card3D(a, 22, kSurface, kSky, 6); Card3D(b, 22, kSurface, kViolet, 6);
+        Txt("Grid Drawing", a.x + 34, a.y + 32, 27, kText);
+        Wrap("Recreate coloured patterns by calling drawCell(x, y, colour).", a.x + 34, a.y + 90, a.width - 68, 16, kMuted, true, false, nullptr, 1.2f);
+        Txt("Print Output", b.x + 34, b.y + 32, 27, kText);
+        Wrap("Print symmetrical text patterns with loops and the bounded print helpers.", b.x + 34, b.y + 90, b.width - 68, 16, kMuted, true, false, nullptr, 1.2f);
+        Txt("Separate session progress | free hints | unlimited attempts", 310, 560, 15, kMint, true);
+        if (Button({ a.x + 34, a.y + 235, a.width - 68, 56 }, "Choose Grid Drawing", kSky, true, 20, true)) {
+            active = &drawing; active->Start(); choosing = false;
+        }
+        if (Button({ b.x + 34, b.y + 235, b.width - 68, 56 }, "Choose Print Output", kViolet, true, 20, true)) {
+            active = &printing; active->Start(); choosing = false;
+        }
+        if (!choosing && active) return active->Draw(dt);
         return PracticeAction::None;
     }
 };

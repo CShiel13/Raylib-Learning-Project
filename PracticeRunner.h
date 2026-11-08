@@ -49,8 +49,11 @@ struct PracticeRunResult {
     bool matched = false;
     bool compileError = false;
     std::vector<unsigned char> cells;
+    std::string learnerOutput;
     std::string message;
 };
+
+enum class PracticeRunMode : unsigned char { GridDrawing = 1, PrintOutput = 2 };
 
 namespace practice_runner_detail {
 
@@ -61,6 +64,7 @@ class SubsetParser {
     int depth = 0, loopDepth = 0, statementCount = 0, expressionDepth = 0;
     std::vector<std::set<std::string>> scopes{ 1 };
     std::string error;
+    bool allowCout = false;
 
     bool Fail(const std::string& why) { if (error.empty()) error = why; return false; }
     bool At(const char* t) const { return pos < tokens.size() && tokens[pos].text == t; }
@@ -76,7 +80,7 @@ class SubsetParser {
     bool IsColour(const std::string& n) const {
         return n == "Red" || n == "Blue" || n == "Yellow" || n == "Green" || n == "Purple";
     }
-    bool Reserved(const std::string& n) const { return n == "drawCell" || IsColour(n); }
+    bool Reserved(const std::string& n) const { return n == "drawCell" || n == "print" || n == "printLine" || n == "std" || n == "cout" || n == "printf" || IsColour(n); }
     bool AddVariable(const std::string& n) {
         if (Reserved(n)) return Fail("That name is reserved by the drawing API.");
         if (scopes.back().count(n)) return Fail("A variable with that name already exists in this block.");
@@ -91,7 +95,26 @@ class SubsetParser {
         while (i < src.size()) {
             unsigned char c = (unsigned char)src[i];
             if (std::isspace(c)) { ++i; continue; }
-            if (src[i] == '#' || src[i] == '"' || src[i] == '\'') return Fail("Preprocessor lines and string or character literals are outside this C++ subset.");
+            if (src[i] == '#') return Fail("Preprocessor lines are outside this C++ subset.");
+            if (src[i] == '"' || src[i] == '\'') {
+                char quote = src[i++]; size_t begin = i - 1; bool closed = false;
+                while (i < src.size()) {
+                    unsigned char ch = (unsigned char)src[i++];
+                    if (ch == (unsigned char)quote) { closed = true; break; }
+                    if (ch == '\\') {
+                        if (i >= src.size()) return Fail("Unfinished escape in print literal.");
+                        char escaped = src[i++];
+                        if (escaped != 'n' && escaped != 'r' && escaped != 't' && escaped != '\\' && escaped != '\'' && escaped != '"')
+                            return Fail("Only newline, tab, slash, and quote escapes are supported in print literals.");
+                    } else if (ch < 32 || ch > 126) return Fail("Print literals must use printable ASCII characters.");
+                }
+                if (!closed) return Fail("Unclosed print literal.");
+                if (quote == '\'' && i - begin != 3 && !(i - begin == 4 && src[begin + 1] == '\\'))
+                    return Fail("Character literals must contain one supported character or escape.");
+                tokens.push_back({ src.substr(begin, i - begin), false });
+                if (tokens.size() > 3000) return Fail("The solution has too many tokens.");
+                continue;
+            }
             if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '/') { i += 2; while (i < src.size() && src[i] != '\n') ++i; continue; }
             if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '*') {
                 i += 2; while (i + 1 < src.size() && !(src[i] == '*' && src[i + 1] == '/')) ++i;
@@ -105,13 +128,13 @@ class SubsetParser {
                 size_t j = i + 1; while (j < src.size() && std::isdigit((unsigned char)src[j])) ++j;
                 tokens.push_back({ src.substr(i, j - i), false }); i = j;
             } else {
-                static const char* two[] = { "++", "--", "+=", "-=", "*=", "/=", "%=", "==", "!=", "<=", ">=", "&&", "||" };
+                static const char* two[] = { "++", "--", "+=", "-=", "*=", "/=", "%=", "==", "!=", "<=", ">=", "&&", "||", "<<" };
                 bool matched = false;
                 if (i + 1 < src.size()) for (const char* op : two) if (src.compare(i, 2, op) == 0) {
                     tokens.push_back({ op, false }); i += 2; matched = true; break;
                 }
                 if (!matched) {
-                    if (std::string("{}();,+-*/%<>=!&|^").find(src[i]) == std::string::npos)
+                    if (std::string("{}();,:+-*/%<>=!&|^").find(src[i]) == std::string::npos)
                         return Fail("This character is outside the supported C++ subset.");
                     tokens.push_back({ src.substr(i, 1), false }); ++i;
                 }
@@ -181,7 +204,7 @@ class SubsetParser {
         return Fail("Expected an assignment or increment in the loop update.");
     }
     bool Declaration(bool semicolon) {
-        if (!(Take("int") || Take("bool"))) return false;
+        if (!(Take("int") || Take("bool") || Take("char"))) return false;
         std::string n;
         if (!Identifier(n) || !AddVariable(n)) return Fail("Expected a new variable name.");
         if (Take("=") && !Expression()) return false;
@@ -191,10 +214,32 @@ class SubsetParser {
     bool SimpleStatement(bool semicolon) {
         if (pos >= tokens.size() || !tokens[pos].identifier) return Fail("Expected a variable assignment or drawCell call.");
         std::string n = tokens[pos].text;
-        if (n == "drawCell") {
+        if (n == "std") {
+            if (!allowCout) return Fail("std::cout is only available in Print Output mode.");
+            ++pos;
+            if (!Take(":") || !Take(":") || !Take("cout") || !Take("<<")) return Fail("Use std::cout << value; in Print Output mode.");
+            int itemCount = 0;
+            do {
+                if (pos >= tokens.size()) return Fail("std::cout needs a printable value.");
+                const Token& t = tokens[pos];
+                if (!t.identifier && t.text.size() >= 2 && (t.text.front() == '"' || t.text.front() == '\'')) ++pos;
+                else if (!t.identifier && !t.text.empty() && std::isdigit((unsigned char)t.text[0])) ++pos;
+                else if (t.identifier && (Declared(t.text) || t.text == "true" || t.text == "false")) ++pos;
+                else return Fail("std::cout supports only string/character literals, integer literals, and local variables.");
+                if (++itemCount > 64) return Fail("A std::cout statement may contain at most 64 values.");
+            } while (Take("<<"));
+        } else if (n == "drawCell") {
             ++pos;
             if (!Take("(") || !Expression() || !Take(",") || !Expression() || !Take(",") || !Expression() || !Take(")"))
                 return Fail("Use drawCell(x, y, colour) with three expressions.");
+        } else if (n == "print" || n == "printLine") {
+            ++pos;
+            if (!Take("(")) return Fail("Use print(value) or printLine(value).");
+            if (At(")")) return Fail("Print helpers need one value argument.");
+            if (pos < tokens.size() && !tokens[pos].identifier && tokens[pos].text.size() >= 2 &&
+                (tokens[pos].text.front() == '"' || tokens[pos].text.front() == '\'')) ++pos;
+            else if (!Expression()) return false;
+            if (!Take(")")) return Fail("Print helpers accept one value argument.");
         } else {
             ++pos;
             if (!Declared(n)) return Fail("Unknown variable '" + n + "'.");
@@ -214,7 +259,7 @@ class SubsetParser {
             if (!Take("}")) return Fail("Expected '}'.");
             Leave(); return true;
         }
-        if (At("int") || At("bool")) return Declaration(true);
+        if (At("int") || At("bool") || At("char")) return Declaration(true);
         if (Take("if")) {
             if (!Take("(" ) || !Expression() || !Take(")")) return Fail("Expected if (condition).");
             if (!Statement()) return false;
@@ -243,7 +288,8 @@ class SubsetParser {
     }
 
 public:
-    bool Validate(const std::string& src, std::string& why) {
+    bool Validate(const std::string& src, std::string& why, PracticeRunMode mode = PracticeRunMode::GridDrawing) {
+        allowCout = mode == PracticeRunMode::PrintOutput;
         if (!Lex(src)) { why = error; return false; }
         while (pos < tokens.size()) if (!Statement()) { why = error; return false; }
         return true;
@@ -620,11 +666,41 @@ public:
     virtual bool PlatformSupported() const = 0;
     virtual bool Available() const = 0;
     virtual std::string SetupMessage() const = 0;
-    virtual PracticeRunResult Run(const std::string& source, int side) const = 0;
+    virtual PracticeRunResult Run(const std::string& source, int side, PracticeRunMode mode = PracticeRunMode::GridDrawing) const = 0;
 };
 
 inline bool PracticeGridMatches(const std::vector<unsigned char>& output, const std::vector<unsigned char>& target) {
     return output == target;
+}
+
+inline bool ParsePracticeResultRecord(const std::string& record, PracticeRunMode mode, int side, PracticeRunResult& out) {
+    std::vector<std::string> fields; size_t fieldStart = 0;
+    while (true) { size_t sep = record.find(':', fieldStart); fields.push_back(record.substr(fieldStart, sep == std::string::npos ? sep : sep - fieldStart)); if (sep == std::string::npos) break; fieldStart = sep + 1; }
+    if (fields.size() != 8 || fields[0] != "JQRP1") { out.message = "Malformed runner result (header or version)."; return false; }
+    auto number = [](const std::string& s, unsigned& n) {
+        if (s.empty()) return false; n=0;
+        for (unsigned char c : s) { if(c<'0'||c>'9'||n>(0xffffffffu-(c-'0'))/10) return false; n=n*10+(c-'0'); }
+        return true;
+    };
+    unsigned parsedMode=0,bad=0,cellCount=0,textLength=0,overflow=0;
+    if(!number(fields[1],parsedMode)||!number(fields[2],bad)||!number(fields[3],cellCount)||!number(fields[4],textLength)||!number(fields[7],overflow)) {
+        out.message = "Malformed runner result (invalid numeric field)."; return false;
+    }
+    size_t expectedCells = mode == PracticeRunMode::GridDrawing ? (size_t)side * side : 0;
+    if(parsedMode!=(unsigned)mode||bad>1||overflow>1||cellCount!=expectedCells||textLength>4096||fields[5].size()!=(size_t)cellCount*2||fields[6].size()!=(size_t)textLength*2) {
+        out.message = "Malformed runner result (length, mode, or bounds check failed)."; return false;
+    }
+    auto hexByte=[](const std::string&s,size_t at,unsigned char& value) {
+        auto digit=[](char c)->int { if(c>='0'&&c<='9')return c-'0'; if(c>='a'&&c<='f')return c-'a'+10; if(c>='A'&&c<='F')return c-'A'+10; return -1; };
+        if(at+1>=s.size())return false; int a=digit(s[at]),b=digit(s[at+1]); if(a<0||b<0)return false; value=(unsigned char)(a*16+b); return true;
+    };
+    out.cells.resize(cellCount);
+    for(size_t i=0;i<cellCount;++i) if(!hexByte(fields[5],i*2,out.cells[i])||out.cells[i]>5) { out.message="Malformed runner result (invalid grid data)."; return false; }
+    out.learnerOutput.resize(textLength);
+    for(size_t i=0;i<textLength;++i) { unsigned char c=0; if(!hexByte(fields[6],i*2,c)) { out.message="Malformed runner result (invalid output data)."; return false; } out.learnerOutput[i]=(char)c; }
+    if(overflow) { out.cells.clear(); out.learnerOutput.clear(); out.message="Learner output exceeded the 4096-byte limit."; return false; }
+    if(bad) { out.cells.clear(); out.learnerOutput.clear(); out.message="drawCell used an invalid coordinate or colour."; return false; }
+    return true;
 }
 
 class CppPracticeRunner final : public PracticeLanguageRunner {
@@ -693,13 +769,13 @@ public:
         return "WASI SDK and Wasmtime are ready.";
     }
 
-    PracticeRunResult Run(const std::string& source, int side) const override {
+    PracticeRunResult Run(const std::string& source, int side, PracticeRunMode mode = PracticeRunMode::GridDrawing) const override {
         PracticeRunResult out;
 #if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
         if (!Available()) { out.message = SetupMessage(); return out; }
         std::string reason;
         practice_runner_detail::SubsetParser parser;
-        if (!parser.Validate(source, reason)) { out.message = "Subset error: " + reason; return out; }
+        if (!parser.Validate(source, reason, mode)) { out.message = "Subset error: " + reason; return out; }
 
         std::filesystem::path sdk = practice_runner_detail::WasiSdkPath();
 #if defined(_WIN32)
@@ -714,14 +790,30 @@ public:
         std::filesystem::path cpp = dir / "solution.cpp", wasm = dir / "solution.wasm";
         std::ofstream file(cpp, std::ios::binary);
         if (!file) { out.message = "Could not write the temporary solution file."; return out; }
+        if (mode == PracticeRunMode::PrintOutput) file << "#include <iostream>\n#include <streambuf>\n";
         file << "extern \"C\" int printf(const char*, ...);\n"
              << "enum { Red=1, Blue=2, Yellow=3, Green=4, Purple=5 };\n"
-             << "static int grid[" << side * side << "] = {}; static int bad=0; static unsigned calls=0;\n"
+             << "static int grid[" << (side * side > 0 ? side * side : 1) << "] = {}; static int bad=0; static unsigned calls=0;\n"
+             << "static char jout[4096]; static unsigned joutn=0, joutbad=0;\n"
+             << "void emitc(char c){ if(joutn<sizeof(jout)) jout[joutn++]=c; else joutbad=1; }\n"
+             << "void print(const char*s){ for(unsigned i=0;s[i];++i) emitc(s[i]); }\n"
+             << "void print(char c){ emitc(c); }\n"
+             << "void print(int v){ char b[16]; unsigned n=0, u=(unsigned)v; if(v<0){emitc('-');u=0u-u;} do{b[n++]=(char)('0'+u%10);u/=10;}while(u&&n<15); while(n)emitc(b[--n]); }\n"
+             << "void printLine(const char*s){print(s);emitc('\\n');} void printLine(char c){emitc(c);emitc('\\n');} void printLine(int v){print(v);emitc('\\n');}\n"
              << "void drawCell(int x,int y,int c){ if(++calls>4096){bad=1;return;} if(x<0||y<0||x>=" << side << "||y>=" << side
              << "||c<1||c>5){bad=1;return;} grid[y*" << side << "+x]=c; }\n"
              << "void solution(){\n#line 1 \"Practice solution\"\n" << source << "\n}\n"
-             << "int main(){ solution(); printf(\"JQ %d\",bad); for(int i=0;i<" << side * side
-             << ";++i) printf(\" %d\",grid[i]); printf(\"\\n\"); return 0; }\n";
+             ;
+        if (mode == PracticeRunMode::PrintOutput)
+            file << "class PracticeBuf: public std::streambuf { protected: int_type overflow(int_type c) override { if(!traits_type::eq_int_type(c,traits_type::eof())) emitc(traits_type::to_char_type(c)); return traits_type::not_eof(c); } std::streamsize xsputn(const char*s,std::streamsize n) override { for(std::streamsize i=0;i<n;++i) emitc(s[i]); return n; } };\n";
+        file << "int main(){ ";
+        if (mode == PracticeRunMode::PrintOutput) file << "PracticeBuf practiceBuf; std::cout.rdbuf(&practiceBuf); ";
+        file << "solution(); ";
+        if (mode == PracticeRunMode::PrintOutput) file << "std::cout.flush(); ";
+        file << "printf(\"JQRP1:" << (unsigned)mode << ":%d:" << side * side << ":%u:\",bad,joutn);"
+             << "for(int i=0;i<" << side * side << ";++i) printf(\"%02x\",grid[i]); printf(\":\");"
+             << "for(unsigned i=0;i<joutn;++i) printf(\"%02x\",(unsigned char)jout[i]);"
+             << "printf(\":%u\\n\",joutbad); return 0; }\n";
         file.close();
         if (!file) { out.message = "Could not finish writing the temporary solution file."; return out; }
 
@@ -762,17 +854,13 @@ public:
             return out;
         }
 
-        std::istringstream values(run.output);
-        std::string marker; int bad = 1;
-        if (!(values >> marker >> bad) || marker != "JQ") { out.message = "The runner returned an invalid result."; return out; }
-        out.cells.resize((size_t)side * side);
-        for (unsigned char& cell : out.cells) {
-            int value = -1;
-            if (!(values >> value) || value < 0 || value > 5) { out.cells.clear(); out.message = "The runner returned invalid grid data."; return out; }
-            cell = (unsigned char)value;
-        }
-        if (bad) { out.cells.clear(); out.message = "drawCell used an invalid coordinate or colour."; return out; }
-        out.success = true; out.message = "Code ran successfully.";
+        size_t recordAt = run.output.find("JQRP1:");
+        if (recordAt == std::string::npos) { out.message = "The runner returned no valid result record."; return out; }
+        out.message = run.output.substr(0, recordAt); // Runtime diagnostics are kept separate from learner output.
+        std::string record = run.output.substr(recordAt);
+        if (!record.empty() && record.back() == '\n') record.pop_back();
+        if (!ParsePracticeResultRecord(record, mode, side, out)) return out;
+        out.success = true; if (out.message.empty()) out.message = "Code ran successfully.";
 #else
         (void)source; (void)side;
         out.message = "The isolated runner is not available on this platform yet.";
