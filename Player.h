@@ -5,6 +5,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "AvatarData.h"
 
 enum QuestKind { QK_CORRECT, QK_MODULES, QK_STREAK, QK_CODE };
 
@@ -25,6 +26,9 @@ public:
     bool hardMode = false;   // modules end with a hard (LeetCode style) problem
     int gearHidden = 0;      // bit set = that unlocked gear item is switched off (see DrawAvatar)
     int outfit = 0;          // outfit colour index 0-4
+    AvatarLook look;
+    std::set<int> owned;     // bought wardrobe items
+    int lastLevelCoins = 0;  // coins paid by the last AddXP
     std::set<std::string> done;   // finished modules / tests
     std::set<int> unlocked;       // topics bought with coins
     std::vector<Quest> quests;
@@ -35,6 +39,9 @@ public:
         quests = { {QK_CORRECT, 10, 10, 0}, {QK_MODULES, 2, 15, 0},
                    {QK_STREAK, 3, 10, 0},   {QK_CODE, 1, 12, 0} };
         unlocked = { 0 };
+        look = AvatarLook{};
+        owned.clear();
+        lastLevelCoins = 0;
     }
 
     int   Level() const { return xp / 100 + 1; }
@@ -45,9 +52,10 @@ public:
     int AddXP(int n) {
         int before = Level();
         xp += n;
-        int gained = Level() - before;
-        coins += 10 * gained;
-        return gained;
+        lastLevelCoins = 0;
+        for (int l = before + 1; l <= Level(); l++) lastLevelCoins += 10 + AvLevelBonus(l);
+        coins += lastLevelCoins;
+        return Level() - before;
     }
 
     void Note(int kind, int value) {
@@ -91,6 +99,8 @@ public:
         f << '\n' << done.size();
         for (auto& d : done) f << ' ' << d;
         f << '\n' << (hardMode ? 1 : 0) << ' ' << gearHidden << ' ' << outfit << '\n';
+        f << AV_FIELDS; for (int i = 0; i < AV_FIELDS; i++) f << ' ' << look.v[i];
+        f << '\n' << owned.size(); for (int k : owned) f << ' ' << k; f << '\n';
     }
 
     void Load() {
@@ -107,5 +117,19 @@ public:
         for (size_t i = 0; i < n; i++) { std::string d; f >> d; done.insert(d); }
         int hm = 0; if (f >> hm) hardMode = hm != 0;      // old saves: stays off
         int gh = 0, oc = 0; if (f >> gh >> oc) { gearHidden = gh; outfit = ((oc % 5) + 5) % 5; }
+        size_t nv = 0;
+        if (f >> nv) {
+            for (size_t i = 0; i < nv; i++) { int x = 0; f >> x; if (i < AV_FIELDS) look.v[i] = x; }
+            size_t no = 0; f >> no; owned.clear();
+            for (size_t i = 0; i < no; i++) { int k = 0; f >> k; owned.insert(k); }
+            look.Clamp();
+        } else {                                   // old save: carry the old level gear over
+            look.v[AV_OUTC] = outfit;
+            if (Level() >= 2  && !(gearHidden & 1))  look.v[AV_HAT] = 1;
+            if (Level() >= 10 && !(gearHidden & 16)) look.v[AV_HAT] = 5;
+            if (Level() >= 3  && !(gearHidden & 2))  look.v[AV_GLASSES] = 1;
+            if (Level() >= 5  && !(gearHidden & 4))  look.v[AV_NECK] = 2;
+            if (Level() >= 7  && !(gearHidden & 8))  look.v[AV_BACK] = 2;
+        }
     }
 };

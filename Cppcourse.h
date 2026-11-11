@@ -2,12 +2,15 @@
 // CppCourse.h - assembles the full C++ course (18 topics) and registers its hard-mode problems.
 // Game calls InstallCppCourse() once; it replaces the placeholder "C++" course from Content.h.
 #include "CppPart3.h"
+#include "CppExtras.h"
 #include "Hard.h"
 
 inline std::vector<Topic> BuildCppCourseTopics() {
     std::vector<Topic> all = CppTopicsA();
     for (auto& t : CppTopicsB()) all.push_back(std::move(t));
     for (auto& t : CppTopicsC()) all.push_back(std::move(t));
+    ApplyCppLessonExtras(all);                     // lessons now cover what the questions ask
+    AddTestRecaps(all);                            // each topic test opens with a recap
     return all;
 }
 

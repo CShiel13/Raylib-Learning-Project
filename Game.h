@@ -11,6 +11,7 @@
 #include "Content.h"
 #include "Player.h"
 #include "UI.h"
+#include "Avatar.h"
 #include "Hard.h"
 #include "Practice.h"
 #include "CppCourse.h"
@@ -114,7 +115,8 @@ private:
     int hintsShown = 0;
     std::string hardReward;
     float hardKnob = 0;
-    float charBounce = 99, gearHover[5] = { 0 };   // character screen animation
+    float charBounce = 99, avCellHover[12] = { 0 };
+    int avTab = 0;
 #ifdef JQ_SH2
     sh2::Konami konami;                          // easter egg (see Sh2Mode.h)
     std::unique_ptr<sh2::Mode> sh2mode;
@@ -139,7 +141,7 @@ private:
     int picked = -1;
     bool hidden[8] = { false };
     std::string input, feedback;
-    int resXp = 0, resCoins = 0, levelUps = 0;
+    int resXp = 0, resCoins = 0, levelUps = 0, resLevelCoins = 0;
     bool passed = false, firstClear = false;
     float itemT = 0, answerT = 0, hurtT = 0, progShown = 0, optHover[8] = { 0 };
     Vector2 fxAt{ 550, 300 };
@@ -147,6 +149,7 @@ private:
     float resT = 0; bool resBurst = false;
     // lesson cards (shown before a module's questions)
     bool inCards = false; int cardIdx = 0, selPart = -1; float cardT = 0;
+    bool reviewing = false;                        // lesson cards re-opened from inside a quiz
 
     void Go(Screen s) { screen = s; fade = 1.0f; }
     void Toast(const std::string& s) { toast = s; toastT = 2.5f; }
@@ -196,9 +199,9 @@ private:
         if (mod->hasCode) { Item c; c.isCode = true; BuildCodeItem(c); items.push_back(c); }
         cur = 0; lives = 3 + p.extraLife; p.extraLife = 0;
         correct = streak = bestStreak = 0;
-        resXp = resCoins = levelUps = 0; progShown = 0; hurtT = 0;
+        resXp = resCoins = levelUps = resLevelCoins = 0; progShown = 0; hurtT = 0;
         ResetItem();
-        inCards = !mod->lesson.empty(); cardIdx = 0; selPart = -1; cardT = 0; scCards.Reset();
+        inCards = !mod->lesson.empty(); reviewing = false; cardIdx = 0; selPart = -1; cardT = 0; scCards.Reset();
         Go(Screen::Lesson);
     }
     // ----------------------------------------------------------- code question modes
@@ -451,11 +454,16 @@ private:
         Vector2 m = Mouse();
         static const Color pal[5] = { kSky, kMint, kAmber, kViolet, kCoral };
 
-        if (Button({ 24, 20, 48, 48 }, "", kSurface2, true, 20, true)) { p.Save(); Go(Screen::Map); return; }
+        if (Button({ 24, 20, 48, 48 }, "", kSurface2, true, 20, true)) {
+            if (reviewing) { inCards = false; reviewing = false; itemT = 1; return; }
+            p.Save(); Go(Screen::Map); return;
+        }
         Icon(IC_CROSS, 48, 44, 9, kMuted);
-        Txt("LEARN FIRST", 92, 24, 13, kSky);
+        Txt(reviewing ? "REVIEW" : "LEARN FIRST", 92, 24, 13, kSky);
         Txt(Fit(modIdx < 0 ? topics[modTopic].test.title : topics[modTopic].modules[modIdx].title, 600, 22), 92, 40, 22, kText);
-        if (replay && Button({ W - 24 - 120, 20, 120, 44 }, "Skip", kSky, true, 19, true)) { inCards = false; itemT = 0; return; }
+        if ((replay || reviewing) && Button({ W - 24 - 170, 20, 170, 44 }, reviewing ? "Back to quiz" : "Skip", kSky, true, 19, true)) {
+            itemT = reviewing ? 1.0f : 0.0f; inCards = false; reviewing = false; return;
+        }
 
         float th0 = Wrap(c.text, 150, 0, 800, 21, kText, false, false, nullptr, 1.4f);
         float chc = std::max(H - 74 - 110, 112 + 58 + th0 + 26 + (c.code.empty() ? 0.0f : 74 + 18 + 130) + 30 - 74);
@@ -515,8 +523,8 @@ private:
         for (int i = 0; i < n; i++)
             DrawCircleV({ W / 2 - (n - 1) * 14.0f + i * 28, H - 56 }, i == cardIdx ? 7.0f : 5.0f, i == cardIdx ? kSky : kBorder);
         if (cardIdx > 0 && Button({ 150, H - 84, 150, 56 }, "Back", kSky, true, 21, true)) { cardIdx--; cardT = 0; selPart = -1; scCards.Reset(); }
-        if (Button({ W - 150 - 200, H - 84, 200, 56 }, last ? "Start quiz" : "Next", kMint, true, 23) || IsKeyPressed(KEY_ENTER)) {
-            if (last) { inCards = false; itemT = 0; }
+        if (Button({ W - 150 - 200, H - 84, 200, 56 }, last ? (reviewing ? "Back to quiz" : "Start quiz") : "Next", kMint, true, 23) || IsKeyPressed(KEY_ENTER)) {
+            if (last) { itemT = reviewing ? 1.0f : 0.0f; inCards = false; reviewing = false; }
             else { cardIdx++; cardT = 0; selPart = -1; scCards.Reset(); }
         }
     }
@@ -533,6 +541,17 @@ private:
         for (char c : s) if (c != ' ' && c != '\t' && c != '\n') r += c;
         return r;
     }
+    int AwardXP(int amount) {
+        int before = p.Level();
+        int gained = p.AddXP(amount);
+        levelUps += gained;
+        resLevelCoins += p.lastLevelCoins;
+        if (gained > 0) {
+            std::string unlock = AvUnlockText(before, p.Level());
+            Toast(unlock.empty() ? "Level up! You are now level " + std::to_string(p.Level()) : unlock);
+        }
+        return gained;
+    }
     void Grade(bool right, bool isCode, const std::string& wrongInfo, const std::string& expl) {
         answered = true; wasRight = right; answerT = 0;
         if (right) {
@@ -541,7 +560,7 @@ private:
             int c = (int)std::lround((isCode ? 5 : 2) * mult);
             int x = isCode ? 20 : 10;
             p.coins += c; resCoins += c; resXp += x;
-            int lv = p.AddXP(x); levelUps += lv;
+            int lv = AwardXP(x);
             p.Note(QK_CORRECT, 1); p.Note(QK_STREAK, streak);
             if (isCode) p.Note(QK_CODE, 1);
             feedback = expl;
@@ -549,7 +568,7 @@ private:
             FxRing(fxAt.x, fxAt.y, kMint, 90);
             FxFloat(fxAt.x + 40, fxAt.y - 30, "+" + std::to_string(x) + " XP", kMint);
             FxFloat(fxAt.x + 40, fxAt.y + 4, "+" + std::to_string(c) + " coins", kAmber, 22);
-            if (lv > 0) { FxBurst(W / 2, 120, 60); Toast("Level up! You are now level " + std::to_string(p.Level())); }
+            if (lv > 0) FxBurst(W / 2, 120, 60);
         }
         else {
             lives--; streak = 0; hurtT = 0.6f;
@@ -596,7 +615,7 @@ private:
                 bool test = modIdx < 0;
                 int bx = test ? 50 : 20, bc = test ? 20 : 5;
                 resXp += bx; resCoins += bc; p.coins += bc;
-                levelUps += p.AddXP(bx);
+                AwardXP(bx);
                 p.done.insert(k);
                 p.Note(QK_MODULES, 1);
             }
@@ -623,7 +642,7 @@ private:
         if (!p.done.count(hk)) {
             p.done.insert(hk);
             resXp += hard->xp; resCoins += hard->coins; p.coins += hard->coins;
-            levelUps += p.AddXP(hard->xp);
+            AwardXP(hard->xp);
             p.Note(QK_CODE, 1);
             hardReward = "+" + std::to_string(hard->xp) + " XP   +" + std::to_string(hard->coins) + " coins  (first solve)";
         }
@@ -870,7 +889,7 @@ private:
         // character card
         Rectangle ac{ 16, H - 134, 278, 118 };
         Card3D(ac, 18, kSurface2, kBorder, 6);
-        DrawAvatar(66, ac.y + 58 + std::sin(time * 2.2f) * 2.5f, 0.6f, p.Level(), true, p.gearHidden, p.outfit);
+        DrawAvatar(66, ac.y + 58 + std::sin(time * 2.2f) * 2.5f, 0.6f, p.look, true, time);
         Txt("Level " + std::to_string(p.Level()), 122, ac.y + 20, 22, kText);
         Txt(LevelTitle(p.Level()), 122, ac.y + 50, 16, kMint);
         Txt(std::to_string(CourseDone(course)) + " modules cleared", 122, ac.y + 78, 14, kMuted);
@@ -1118,6 +1137,9 @@ private:
             DrawRectangle(-1500, (int)bar.y, 4100, (int)bar.height, kSurface);
             DrawRectangle(-1500, (int)bar.y, 4100, 2, kBorder);
             if (Button({ 150, H - 84, 170, 56 }, "Hint  (" + std::to_string(p.hints) + ")", kSky, p.hints > 0, 21, true)) UseHint();
+            if (!mod->lesson.empty() && Button({ 336, H - 84, 190, 56 }, "Review lesson", kViolet, true, 19, true)) {
+                reviewing = true; inCards = true; cardIdx = 0; cardT = 0; selPart = -1; scCards.Reset();
+            }
             if (it.isCode && it.mode != 1) {
                 bool ok = it.mode == 0 ? !it.placed.empty() : !input.empty();
                 if (Button({ W - 150 - 200, H - 84, 200, 56 }, "Check", kMint, ok, 23) || (ok && IsKeyPressed(KEY_ENTER))) {
@@ -1252,7 +1274,7 @@ private:
             FxBurst(cx, 220, 80); FxBurst(cx - 260, 330, 40); FxBurst(cx + 260, 330, 40);
         }
         float bob = passed ? std::sin(resT * 5) * 4 * std::exp(-resT * 0.8f) : 0;
-        DrawAvatar(cx, 200 + bob - 10 * std::fabs(std::sin(resT * 6)) * std::exp(-resT * 1.2f), 1.5f, p.Level(), passed, p.gearHidden, p.outfit);
+        DrawAvatar(cx, 200 + bob - 10 * std::fabs(std::sin(resT * 6)) * std::exp(-resT * 1.2f), 1.5f, p.look, passed, resT);
         float k = EaseOutBack(resT / 0.5f);
         TxtC(passed ? "Module complete!" : "Out of hearts", cx, 318, 44 * k, passed ? kMint : kCoral);
         TxtC(passed ? (firstClear ? "First-clear bonus added." : "Replay finished. Practice pays off.")
@@ -1272,7 +1294,7 @@ private:
         float yy = 552;
         if (levelUps > 0) {
             float pu = 1 + 0.04f * std::sin(resT * 7);
-            TxtC("LEVEL UP!  You reached level " + std::to_string(p.Level()) + "  (+" + std::to_string(levelUps * 10) + " coins)", cx, yy, 24 * pu, kAmber);
+            TxtC("LEVEL UP!  You reached level " + std::to_string(p.Level()) + "  (+" + std::to_string(resLevelCoins) + " coins)", cx, yy, 24 * pu, kAmber);
             yy += 34;
         }
         if (passed && modIdx < 0 && firstClear && modTopic + 1 < (int)topics.size()) {
@@ -1283,103 +1305,150 @@ private:
     }
 
     // ----------------------------------------------------------- CHARACTER
-    static void DrawGearIcon(int id, float cx, float cy, float s, Color c) {
-        switch (id) {
-        case 0: Box({ cx - 22 * s, cy + 2 * s, 44 * s, 8 * s }, 3 * s, c); Box({ cx - 13 * s, cy - 18 * s, 26 * s, 22 * s }, 4 * s, c); break;   // hat
-        case 1: DrawRing({ cx - 11 * s, cy }, 7 * s, 9 * s, 0, 360, 24, c); DrawRing({ cx + 11 * s, cy }, 7 * s, 9 * s, 0, 360, 24, c);
-            DrawLineEx({ cx - 3 * s, cy }, { cx + 3 * s, cy }, 2 * s, c); break;                                                              // glasses
-        case 2: Box({ cx - 24 * s, cy - 8 * s, 48 * s, 12 * s }, 6 * s, c); Box({ cx + 6 * s, cy, 10 * s, 24 * s }, 4 * s, c); break;            // scarf
-        case 3: Tri({ cx - 24 * s, cy - 16 * s }, { cx + 24 * s, cy - 16 * s }, { cx, cy + 24 * s }, c); break;                                   // cape
-        case 4: DrawRectangleRec({ cx - 20 * s, cy + 2 * s, 40 * s, 10 * s }, c);
-            for (int i = -1; i <= 1; i++) Tri({ cx + i * 14 * s - 6 * s, cy + 2 * s }, { cx + i * 14 * s + 6 * s, cy + 2 * s }, { cx + i * 14 * s, cy - 16 * s }, c);
-            break;                                                                                                                       // crown
-        }
-    }
-
+    // ----------------------------------------------------------- CHARACTER (wardrobe)
     void DrawCharacter() {
         if (TopBar("Character", true, false)) { p.Save(); Go(from); return; }
         float dt = GetFrameTime();
         Vector2 m = Mouse();
-        static const char* gearName[5] = { "Hat", "Glasses", "Scarf", "Cape", "Crown" };
-        static const int gearLvl[5] = { 2, 3, 5, 7, 10 };
-        Color accent = OutfitColor(p.outfit);
+        AvatarLook& L = p.look;
+        // Apply tab input before reading its item count. Otherwise a click that
+        // switches from a large category to a smaller one can leave this frame
+        // iterating with the old count and indexing past the new category.
+        for (int f = 0; f < AV_FIELDS; f++) {
+            Rectangle tb{ 524.0f + (f % 7) * 76, 108.0f + (f / 7) * 38, 72, 32 };
+            if (f != avTab && CheckCollisionPointRec(m, tb) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+                avTab = f;
+                std::fill(avCellHover, avCellHover + 12, 0.0f);
+                FxRing(m.x, m.y, AvPal(AV_OUTC, L.v[AV_OUTC]), 30);
+                break;
+            }
+        }
+        const Color accent = AvPal(AV_OUTC, L.v[AV_OUTC]);
+        const int n = AvCount(avTab);
+        const bool pal = AvIsPalette(avTab);
+
+        // grid cells for the current tab (colour swatches or item cards)
+        auto cell = [&](int i) {
+            return pal ? Rectangle{ 524.0f + (i % 8) * 64, 214.0f + (i / 8) * 64, 56, 56 }
+                       : Rectangle{ 524.0f + (i % 4) * 134, 190.0f + (i / 4) * 124, 126, 116 };
+        };
+        int hoverId = -1;                                              // item under the mouse = live try-on
+        for (int i = 0; i < n; i++) if (CheckCollisionPointRec(m, cell(i))) hoverId = i;
+        AvatarLook pv = L;
+        if (hoverId >= 0) pv.v[avTab] = hoverId;
 
         // ---- stage
         Rectangle st{ 40, 96, 440, 584 };
         Card3D(st, 26, kSurface, kBorder, 7);
         float cx = st.x + st.width / 2;
-        DrawCircleV({ cx, 330 }, 205, Al(accent, 0.06f));
-        DrawCircleV({ cx, 330 }, 145, Al(accent, 0.08f));
+        Rectangle in{ st.x + 8, st.y + 8, st.width - 16, st.height - 16 };
+        ScissorOn(in.x, in.y, in.width, in.height);
+        DrawAvatarBackdrop(in, pv.v[AV_BG], time, accent);
         charBounce += dt;
         float jump = -std::fabs(std::sin(charBounce * 9.0f)) * 46.0f * std::exp(-charBounce * 3.2f);
         float bob = std::sin(time * 2.2f) * 4.0f;
         Box({ cx - 105, 548, 210, 18 }, 9, Al(Color{ 0, 0, 0, 255 }, 0.35f));
+        DrawPet(st.x + 84, 548, 1.7f, pv.v[AV_PET], time);
+        DrawAvatar(cx, 330 + bob + jump, 2.2f, pv, true, time);
+        EndScissorMode();
         Rectangle hit{ cx - 130, 160, 260, 400 };
         if (CheckCollisionPointRec(m, hit) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
             charBounce = 0; FxRing(m.x, m.y, accent, 70); FxSparks(m.x, m.y, accent, 12);
         }
-        DrawAvatar(cx, 330 + bob + jump, 2.2f, p.Level(), true, (unsigned)p.gearHidden, p.outfit);
-        TxtC("Level " + std::to_string(p.Level()), cx, 566, 34, kText);
-        TxtC(LevelTitle(p.Level()), cx, 606, 20, kMint);
+        Box({ st.x + 24, 554, st.width - 48, 118 }, 18, Al(kBg, 0.72f));
+        TxtC("Level " + std::to_string(p.Level()), cx, 560, 30, kText);
+        TxtC(LevelTitle(p.Level()), cx, 598, 18, kMint);
         int into = p.XpInLevel();
-        Bar({ st.x + 50, 640, 340, 14 }, (float)into / 100.0f, kMint);
-        TxtC(std::to_string(into) + " / 100 XP   -   " + std::to_string(100 - into) + " XP to level " + std::to_string(p.Level() + 1), cx, 658, 14, kMuted);
+        Bar({ st.x + 50, 628, 340, 12 }, (float)into / 100.0f, kMint);
+        TxtC(std::to_string(into) + " / 100 XP   -   " + std::to_string(100 - into) + " XP to level " + std::to_string(p.Level() + 1), cx, 646, 13, kMuted);
 
-        // ---- gear
-        Rectangle gp{ 510, 96, 550, 306 };
-        Card3D(gp, 22, kSurface, kBorder, 6);
-        Txt("Gear", 534, 110, 26, kText);
-        Txt("Gear unlocks as you level up. Tap an unlocked item to switch it on or off.", 534, 146, 14, kMuted);
-        for (int i = 0; i < 5; i++) {
-            bool unlocked = p.Level() >= gearLvl[i];
-            bool on = unlocked && !(p.gearHidden & (1 << i));
-            Rectangle r{ 524.0f + i * 106, 176, 98, 136 };
-            bool hov = unlocked && CheckCollisionPointRec(m, r);
-            gearHover[i] = Smooth(gearHover[i], hov ? 1.0f : 0.0f, 16, dt);
-            r.y -= 4 * gearHover[i];
-            Card3D(r, 16, unlocked ? Mix(kSurface2, accent, on ? 0.14f : 0.0f) : kSurface, on ? accent : kBorder, 4);
-            DrawGearIcon(i, r.x + 49, r.y + 48, 1.15f, unlocked ? (on ? accent : kMuted) : kLock);
-            if (!unlocked) Icon(IC_LOCK, r.x + 49, r.y + 40, 11, Al(kText, 0.8f));
-            TxtC(gearName[i], r.x + 49, r.y + 88, 16, unlocked ? kText : kMuted);
-            TxtC(unlocked ? (on ? "On" : "Off") : "Level " + std::to_string(gearLvl[i]), r.x + 49, r.y + 110, 14, unlocked ? (on ? accent : kMuted) : kMuted);
-            if (hov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { p.gearHidden ^= (1 << i); p.Save(); FxRing(m.x, m.y, accent, 40); }
+        // ---- wardrobe panel: tabs
+        Rectangle wp{ 510, 96, 550, 464 };
+        Card3D(wp, 22, kSurface, kBorder, 6);
+        for (int f = 0; f < AV_FIELDS; f++) {
+            Rectangle tb{ 524.0f + (f % 7) * 76, 108.0f + (f / 7) * 38, 72, 32 };
+            bool sel = f == avTab, hv = CheckCollisionPointRec(m, tb);
+            Box(tb, 10, sel ? accent : Mix(kSurface2, accent, hv ? 0.25f : 0.0f));
+            TxtC(Fit(AvFieldName(f), 66, 13), tb.x + 36, tb.y + 8, 13, sel ? OnColor(accent) : kText);
         }
-        Txt("Outfit colour", 534, 330, 16, kMuted);
-        for (int i = 0; i < 5; i++) {
-            Vector2 sc{ 556.0f + i * 56, 372 };
-            bool hov = CheckCollisionPointRec(m, { sc.x - 22, sc.y - 22, 44, 44 });
-            DrawCircleV({ sc.x, sc.y + 4 }, 18, Mix(OutfitColor(i), kBg, 0.5f));
-            DrawCircleV(sc, hov ? 20.0f : 18.0f, OutfitColor(i));
-            if (p.outfit == i) DrawRing(sc, 22, 25, 0, 360, 32, kText);
-            if (hov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { p.outfit = i; p.Save(); FxRing(sc.x, sc.y, OutfitColor(i), 50); }
+        if (pal) Txt("Colours are free - tap one to wear it.", 524, 184, 14, kMuted);
+
+        // ---- wardrobe panel: swatches / item cards
+        for (int i = 0; i < n; i++) {
+            Rectangle r = cell(i);
+            const bool hv = i == hoverId, on = L.v[avTab] == i;
+            avCellHover[i] = Smooth(avCellHover[i], hv ? 1.0f : 0.0f, 16, dt);
+            r.y -= 3 * avCellHover[i];
+            if (pal) {
+                Color c = AvPal(avTab, i);
+                DrawCircleV({ r.x + 28, r.y + 32 }, 22, Mix(c, kBg, 0.5f));
+                DrawCircleV({ r.x + 28, r.y + 28 }, hv ? 24.0f : 22.0f, c);
+                if (on) DrawRing({ r.x + 28, r.y + 28 }, 26, 29, 0, 360, 32, kText);
+                if (hv && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { L.v[avTab] = i; p.Save(); FxRing(r.x + 28, r.y + 28, c, 40); }
+                continue;
+            }
+            const AvItem& it = AvItemAt(avTab, i);
+            const bool un = AvUnlocked(avTab, i, p.Level(), p.owned), buy = AvCanBuy(avTab, i, p.Level(), p.owned);
+            Card3D(r, 14, on ? Mix(kSurface2, accent, 0.18f) : kSurface2, on ? accent : kBorder, 4);
+
+            // thumbnail: the avatar wearing just this item
+            AvatarLook mv = L; mv.v[avTab] = i;
+            if (avTab == AV_PET) DrawPet(r.x + 63, r.y + 72, 0.55f, i, time);
+            else if (avTab == AV_BG) {
+                Rectangle tr{ r.x + 6, r.y + 6, r.width - 12, 66 };
+                ScissorOn(tr.x, tr.y, tr.width, tr.height);
+                DrawAvatarBackdrop(tr, i, time, accent);
+                EndScissorMode();
+            }
+            else DrawAvatar(r.x + 63, r.y + 46, 0.33f, mv, true, 0);
+
+            if (!un && !buy) { Box(r, 14, Al(kBg, 0.45f)); Icon(IC_LOCK, r.x + 63, r.y + 40, 11, Al(kText, 0.8f)); }
+            TxtC(Fit(it.name, 116, 13), r.x + 63, r.y + 80, 13, (un || buy) ? kText : kMuted);
+            if (on) TxtC("Equipped", r.x + 63, r.y + 98, 12, kMint);
+            else if (un) TxtC("Tap to wear", r.x + 63, r.y + 98, 12, kMuted);
+            else if (buy) {
+                Icon(IC_COIN, r.x + 44, r.y + 105, 7, kAmber);
+                Txt(std::to_string(it.price), r.x + 55, r.y + 98, 13, p.coins >= it.price ? kAmber : kCoral);
+            }
+            else {
+                Icon(IC_LOCK, r.x + 40, r.y + 105, 6, kMuted);
+                Txt("Level " + std::to_string(it.level), r.x + 50, r.y + 98, 12, kMuted);
+            }
+
+            if (hv && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+                if (un) { L.v[avTab] = i; p.Save(); FxRing(m.x, m.y, accent, 40); }
+                else if (buy) {
+                    if (p.coins >= it.price) {
+                        p.coins -= it.price; p.owned.insert(AvKey(avTab, i)); L.v[avTab] = i; p.Save();
+                        Toast(std::string("Bought ") + it.name); FxBurst(m.x, m.y, 30);
+                    }
+                    else Toast("Not enough coins");
+                }
+                else Toast("Unlocks at level " + std::to_string(it.level));
+            }
         }
 
-        // ---- stats
-        Rectangle sp{ 510, 426, 550, 254 };
-        Card3D(sp, 22, kSurface, kBorder, 6);
-        Txt("Stats", 534, 440, 24, kText);
+        // ---- stats + upcoming rewards
+        Rectangle sp{ 510, 576, 550, 104 };
+        Card3D(sp, 20, kSurface, kBorder, 5);
         int modules = 0; for (int c = 0; c < (int)courses.size(); c++) modules += CourseDone(c);
-        int boss = 0; for (auto& k : p.done) if (k.size() >= 4 && k.compare(k.size() - 4, 4, "hard") == 0) boss++;
-        std::string next = "All unlocked";
-        for (int i = 0; i < 5; i++) if (p.Level() < gearLvl[i]) { next = std::string(gearName[i]) + " (Lv " + std::to_string(gearLvl[i]) + ")"; break; }
-        struct Tile { const char* label; std::string value; Color c; float fs; };
-        Tile tiles[8] = {
-            {"Level", std::to_string(p.Level()), kMint, 28}, {"Total XP", std::to_string(p.xp), kSky, 28},
-            {"Coins", std::to_string(p.coins), kAmber, 28}, {"Hints", std::to_string(p.hints), kSky, 28},
-            {"Coin boost", std::to_string((int)std::lround(p.CoinMult() * 100)) + "%", kAmber, 28}, {"Modules done", std::to_string(modules), kMint, 28},
-            {"Boss problems", std::to_string(boss), kCoral, 28}, {"Next unlock", next, kViolet, 15},
-        };
-        for (int i = 0; i < 8; i++) {
-            Rectangle r{ 530.0f + (i % 4) * 126, 484.0f + (i / 4) * 90, 116, 78 };
-            Box({ r.x, r.y + 3, r.width, r.height }, 14, Al(Color{ 0, 0, 0, 255 }, 0.3f));
-            Box(r, 14, kSurface2);
-            Box({ r.x, r.y + 14, 4, r.height - 28 }, 2, tiles[i].c);
-            Txt(tiles[i].label, r.x + 14, r.y + 10, 13, kMuted);
-            Wrap(tiles[i].value, r.x + 14, r.y + (tiles[i].fs > 20 ? 32 : 36), r.width - 22, tiles[i].fs, tiles[i].c, true, false, nullptr, 1.15f);
+        struct Tile { const char* label; std::string value; Color c; };
+        Tile tiles[3] = { {"Level", std::to_string(p.Level()), kMint}, {"Coins", std::to_string(p.coins), kAmber}, {"Modules", std::to_string(modules), kSky} };
+        for (int i = 0; i < 3; i++) {
+            Rectangle r{ 526.0f + i * 104, 592, 96, 72 };
+            Box(r, 12, kSurface2);
+            Box({ r.x, r.y + 12, 4, r.height - 24 }, 2, tiles[i].c);
+            Txt(tiles[i].label, r.x + 14, r.y + 8, 12, kMuted);
+            Txt(tiles[i].value, r.x + 14, r.y + 30, 26, kText);
         }
+        Txt("Next rewards", 852, 586, 14, kMuted);
+        auto up = AvUpcoming(p.Level(), 3);
+        for (size_t i = 0; i < up.size(); i++) {
+            Txt("Lv " + std::to_string(up[i].first), 852, 610 + i * 20.0f, 13, kViolet);
+            Txt(Fit(up[i].second, 150, 13), 892, 610 + i * 20.0f, 13, kText);
+        }
+        if (up.empty()) Txt("Everything unlocked!", 852, 612, 14, kMint);
     }
-
-    // ----------------------------------------------------------- SHOP
     void DrawShop() {
         if (TopBar("Shop", true, false)) { p.Save(); Go(from); return; }
         scShop.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 110.0f + 3 * 148 + 70 - 74), GetFrameTime());
