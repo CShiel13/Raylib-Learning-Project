@@ -1,13 +1,14 @@
-// JavaQuest - learn programming with bite-sized quizzes. C++17 + raylib 5.x/6.x
+// C++ Quest - learn programming with bite-sized challenges. C++17 + raylib 5.x/6.x
 #include <algorithm>
 #include <ctime>
 #include "raylib.h"
+#include "ui/Viewport.h"
 #include "rlgl.h"
-#include "Game.h"
+#include "app/Game.h"
 
 int main() {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
-    InitWindow(1100, 700, "JavaQuest");
+    InitWindow(1100, 700, "C++ Quest");
 
     // Open at a comfortable size for this monitor (the UI scales to any window size).
     int mon = GetCurrentMonitor();
