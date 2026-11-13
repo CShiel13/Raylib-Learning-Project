@@ -181,6 +181,8 @@ inline std::vector<Topic> CppTopicsA() {
         WithLesson(WithCode(M("Compound & Increment", {
             Q("int x = 5; int y = x++;  What are x and y?", {"x = 6, y = 5", "x = 6, y = 6", "x = 5, y = 6", "x = 5, y = 5"}, "Postfix returns the old value, then increments."),
             Q("int x = 5; int y = ++x;  What are x and y?", {"x = 6, y = 6", "x = 6, y = 5", "x = 5, y = 6", "x = 5, y = 5"}, "Prefix increments first, then returns the new value."),
+            Q("Are ++i and i++ both valid C++ when i is an int?", {"Yes; both increment i by one", "Only ++i is valid", "Only i++ is valid", "Neither works on an int"}, "Both are valid. Prefix yields the updated value, while postfix yields the previous value if the expression's result is used."),
+            Q("int i = 4; std::cout << i++;  What is printed?", {"4", "5", "45", "A compiler error"}, "Postfix increments i to 5 but the value sent to cout is the original 4."),
             Q("What does x *= 3 do?", {"Multiplies x by 3 and stores the result in x", "Prints 3 times x", "Compares x with 3", "Declares x"}, "x *= 3 is x = x * 3."),
         }), "Increase total by 10 using a compound assignment.", "total ... 10;",
             {"total += 10;"}, "+= adds and stores."), {
@@ -213,6 +215,7 @@ inline std::vector<Topic> CppTopicsA() {
             Q("Which expression is true?", {"5 / 2 == 2", "5 / 2 == 2.5", "5 % 2 == 2", "5 / 2 == 3"}, "Integer division gives 2."),
             Q("What does !true && false evaluate to?", {"false", "true", "An error", "1 as text"}, "!true is false, and false && false is false."),
             Q("x -= 2 is the same as...", {"x = x - 2", "x = 2 - x", "x == x - 2", "x = -2"}, "Compound assignment subtracts and stores."),
+            Q("int a = 2, b = 2; int x = a++; int y = ++b;  Which values are stored in x and y?", {"x = 2, y = 3", "x = 3, y = 3", "x = 2, y = 2", "x = 3, y = 2"}, "a++ supplies a's old value (2); ++b supplies b's updated value (3). Both a and b end at 3."),
         }), "Declare int result as the remainder of 29 divided by 6.", "int result = ...;", {"int result = 29 % 6;"}, "% gives the remainder.")));
 
     // ============================================================ 5  Conditionals
@@ -280,6 +283,7 @@ inline std::vector<Topic> CppTopicsA() {
             Q("What are the three parts of a for header, in order?", {"initialise; condition; update", "condition; initialise; update", "update; condition; initialise", "initialise, condition, update"}, "They are separated by semicolons."),
             Q("How many times does for (int i = 1; i <= 10; i += 3) run?", {"4", "3", "10", "5"}, "i takes the values 1, 4, 7 and 10."),
             Q("What is the scope of i declared in for (int i = 0; ...)?", {"Only the loop", "The whole function", "The whole file", "Nowhere"}, "A variable declared in the header exists only for the loop."),
+            Q("For an int i, which update visits the same loop indices: ++i or i++?", {"Either update; the loop discards the expression's value", "Only ++i", "Only i++", "Neither is valid"}, "In for (int i = 0; i < 3; update), both ++i and i++ advance i after each pass and visit 0, 1, 2."),
         }), "Write a for header that counts i from 0 to 9, ending with an opening brace.", "for (int i = 0; ...; ...) {",
             {"for (int i = 0; i < 10; ++i) {", "for (int i = 0; i < 10; i++) {"}, "for (init; condition; update) {"), {
             L("for", "Use for when you know how many times to repeat. The header has three parts: where to start, when to keep going, and how to step.", "for (int i = 0; i < 5; ++i)",
@@ -310,6 +314,7 @@ inline std::vector<Topic> CppTopicsA() {
             Q("What does this print?  for (int i = 0; i < 3; ++i) std::cout << i;", {"012", "123", "0123", "321"}, "i takes the values 0, 1, 2."),
             Q("Which loop fits best when the number of repetitions is known in advance?", {"for", "do-while", "while (true)", "goto"}, "for keeps start, test and step together."),
             Q("What is sum?  int sum = 0; for (int i = 1; i <= 4; ++i) sum += i;", {"10", "4", "6", "24"}, "1 + 2 + 3 + 4 = 10."),
+            Q("What does for (int i = 0; i < 3; i++) print if its body is std::cout << i;?", {"012", "123", "0123", "A compiler error: i++ is invalid"}, "Postfix i++ is valid in the update clause. The body still sees 0, then 1, then 2, exactly as with ++i."),
         }), "Write a statement that exits the loop when i equals 5.", "if (...) break;",
         {"if (i == 5) break;", "if (i == 5) { break; }"}, "break leaves the loop.")));
 
