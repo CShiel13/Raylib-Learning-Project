@@ -5,6 +5,7 @@
 #include <string>
 #include "PracticeActivity.h"
 #include "PracticeQuestions.h"
+#include "PracticeQuestionPicker.h"
 #include "../ui/Theme.h"
 #include "../ui/Text.h"
 #include "../ui/Shapes.h"
@@ -15,6 +16,7 @@
 // Question content and progression are independent of the C++ code-execution runner.
 class PracticeQuizSession : public IPracticeActivity {
     PracticeMiniGameKind kind;
+    PracticeQuestionPicker picker;
     int questionIndex = -1;
     int answered = 0;
     int score = 0;
@@ -29,18 +31,8 @@ class PracticeQuizSession : public IPracticeActivity {
     }
 
     void PickQuestion() {
-        const auto& bank = PracticeQuestionBank::For(kind);
-        const int difficulty = std::min(3, 1 + answered / 2);
-        int candidates[16] = {};
-        int count = 0;
-        for (int i = 0; i < (int)bank.size() && count < 16; ++i)
-            if (bank[(size_t)i].difficulty == difficulty) candidates[count++] = i;
-        if (count == 0) { questionIndex = 0; return; }
-        int alternatives[16] = {};
-        int alternativeCount = 0;
-        for (int i = 0; i < count; ++i)
-            if (candidates[i] != questionIndex) alternatives[alternativeCount++] = candidates[i];
-        questionIndex = alternatives[GetRandomValue(0, alternativeCount > 0 ? alternativeCount - 1 : 0)];
+        const int unlockedDifficulty = std::min(3, 1 + answered / 2);
+        questionIndex = picker.Next(PracticeQuestionBank::For(kind), unlockedDifficulty);
         for (int i = 0; i < 4; ++i) optionOrder[(size_t)i] = i;
         for (int i = 3; i > 0; --i) {
             int j = GetRandomValue(0, i);
@@ -91,7 +83,8 @@ class PracticeQuizSession : public IPracticeActivity {
     }
 
 public:
-    explicit PracticeQuizSession(PracticeMiniGameKind selectedKind) : kind(selectedKind) {}
+    explicit PracticeQuizSession(PracticeMiniGameKind selectedKind)
+        : kind(selectedKind), picker(static_cast<unsigned>(GetRandomValue(1, 0x7fffffff))) {}
 
     void Start() override {
         if (started) return;
@@ -146,7 +139,7 @@ public:
                 selected = -1;
             }
         } else {
-            Txt("Correct answers earn " + std::to_string(10 * q.difficulty) + " points. Difficulty rises every two questions.",
+            Txt("Correct answers earn " + std::to_string(10 * q.difficulty) + " points. Harder questions unlock every two answers.",
                 48, 570, 14, kMuted);
             Txt("Best streak: " + std::to_string(bestStreak), 48, 598, 13, kLock);
         }

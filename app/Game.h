@@ -23,6 +23,8 @@
 #include "app/LessonRetryPolicy.h"
 #include "labs/LabRunner.h"
 #include "labs/LabDrafts.h"
+#include "labs/LabEditor.h"
+#include "labs/LabFullQuestions.h"
 
 // Optional easter egg: if ee/mode.h exists it is compiled in; delete the folder and the game builds without it.
 #if defined(__has_include)
@@ -66,7 +68,8 @@ public:
         DrawBackground();
         if (IsKeyPressed(KEY_ESCAPE)) {
             if (screen != Screen::Practice) p.Save();
-            if (screen == Screen::Map) Go(mapFrom);
+            if (screen == Screen::LabTask && labEditor.CloseFind()) { /* Escape closes Find first */ }
+            else if (screen == Screen::Map) Go(mapFrom);
             else if (screen == Screen::Bonus || screen == Screen::Games || screen == Screen::Learn) Go(Screen::Menu);
             else if (screen == Screen::Labs) Go(Screen::Learn);
             else if (screen == Screen::LabTask) LeaveLab();
@@ -136,10 +139,13 @@ private:
     engagement::Rewards rewards;
     engagement::RapidReviewScreen rapidReview;
     engagement::MatchMadnessScreen matchMadness;
-    int labGroup = 0, labIndex = 0, labHints = 0;
+    int labGroup = 0, labIndex = 0, labHints = 0, labDetailTab = 0;
     bool labChecked = false, labSolved = false;
     questlabs::Result labResult;
-    CodeEditor labEditor;
+    questlabs::LabEditor labEditor;
+    float labAutoSaveTimer=0;
+    std::string labLastSaved, labLastRunText, labObservedText;
+    bool labOutputVisible=true, labResetConfirm=false;
     std::string labResultNote;
     std::vector<std::string> labDrafts = std::vector<std::string>(questlabs::All().size());
     bool editingFriendCode = false;
@@ -151,7 +157,7 @@ private:
 
     // menu / map animation
     float cardHover[8] = { 0 }, rowHover[40] = { 0 }, nodeHover[40] = { 0 };
-    Scroller scMenu, scBonus, scMap, scSide, scShop, scQuest, scCards, scHard, scLabs, scLabInfo;
+    Scroller scMenu, scBonus, scMap, scSide, scShop, scQuest, scCards, scHard, scLabs, scLabInfo, scLabConsole;
     // hard mode
     const HardProblem* hard = nullptr;
     CodeEditor editor;
@@ -957,16 +963,24 @@ private:
     }
 
     void OpenLab(int index) {
-        labIndex=index; labHints=0;labChecked=false;labSolved=p.done.count(questlabs::SaveKey(index))>0;
+        labIndex=index; labHints=0;labDetailTab=0;labChecked=false;labSolved=p.done.count(questlabs::SaveKey(index))>0;
         const auto& task=questlabs::All().at(index);
-        labEditor.SetText(labDrafts[index].empty()?task.starter:labDrafts[index]);
-        labResult={}; labResultNote=""; scLabInfo.Reset(); Go(Screen::LabTask);
+        // New drafts begin with the original task wording, exactly where the
+        // learner writes code. Existing saved drafts remain untouched.
+        labEditor.SetText(labDrafts[index].empty()
+            ? std::string(questlabs::TaskComment(task.id)) + "\n\n" + task.starter
+            : labDrafts[index]);
+        labLastSaved=labEditor.Text();labObservedText=labLastSaved;labLastRunText.clear();labAutoSaveTimer=0;labResetConfirm=false;labOutputVisible=false;
+        labResult={}; labResultNote=""; scLabInfo.Reset();scLabConsole.Reset(); Go(Screen::LabTask);
     }
-    void LeaveLab() {
-        if (labIndex>=0 && labIndex<(int)labDrafts.size()) labDrafts[labIndex]=labEditor.Text();
-        questlabs::SaveDrafts(labDrafts);
-        Go(Screen::Labs);
+    void SaveLabDraft() {
+        if(labIndex>=0 && labIndex<(int)labDrafts.size()) {
+            labDrafts[labIndex]=labEditor.Text();
+            questlabs::SaveDrafts(labDrafts);
+            labLastSaved=labDrafts[labIndex];labObservedText=labLastSaved;labAutoSaveTimer=0;
+        }
     }
+    void LeaveLab() {SaveLabDraft();Go(Screen::Labs);}
     void DrawLabs() {
         if (TopBar("C++ Labs", true, true)) { Go(Screen::Learn); return; }
         if (screen != Screen::Labs) return;
@@ -997,8 +1011,15 @@ private:
     }
     void SubmitLab(){
         const auto& l=questlabs::All()[labIndex];
-        labDrafts[labIndex]=labEditor.Text();questlabs::SaveDrafts(labDrafts);
-        labResult=questlabs::Run(l,labDrafts[labIndex]);labChecked=true;
+        SaveLabDraft();labLastRunText=labEditor.Text();
+        labResult=questlabs::Run(l,labLastRunText);labChecked=true;
+        labEditor.errorLine=labResult.compileError?questlabs::LabErrorLine(labResult.message):0;
+        labOutputVisible=true;scLabConsole.Reset();
+        if(labEditor.errorLine>0){
+            labEditor.doc.Move(labEditor.doc.PositionAt(labEditor.errorLine,1));
+            labEditor.focused=true;
+            labEditor.EnsureCaret({482,159,585,296});
+        }
         if(labResult.accepted) {
             bool first=p.done.insert(questlabs::SaveKey(l.id)).second;
             labSolved=true;
@@ -1015,63 +1036,125 @@ private:
         const auto& l=questlabs::All()[labIndex];
         if (TopBar("Lab "+std::to_string(l.id+1)+" of "+std::to_string(questlabs::All().size()),true,true)) {LeaveLab();return;}
         if(screen!=Screen::LabTask)return;
+        const auto& full = questlabs::FullQuestion(l.id);
         Card3D({20,88,432,536},18,kSurface,kBorder,5);
         Txt(Fit(l.title,400,25),36,98,25,kText);
-        Txt("READ  -  PLAN  -  WRITE  -  TEST",36,134,13,kSky);
-        const float leftX=36, top=168, lw=399, lh=420;
+        Txt(Fit(full.source,395,12),36,133,12,kMuted);
+        const bool questionTab = labDetailTab == 0;
+        if (Button({36,153,193,34},"Full question",questionTab?kMint:kSurface2,true,15,!questionTab)) {
+            if(!questionTab){labDetailTab=0;scLabInfo.Reset();}
+        }
+        if (Button({235,153,195,34},"Study notes + hints",!questionTab?kSky:kSurface2,true,15,questionTab)) {
+            if(questionTab){labDetailTab=1;scLabInfo.Reset();}
+        }
+        const float leftX=36, top=200, lw=399, lh=405;
         auto info=[&](bool draw)->float {
             float y=0;
-            if(draw)Txt("CONCEPT FROM YOUR NOTES",leftX+10,top+y,14,kMint);
-            y+=27;
-            y+=Wrap(l.summary,leftX+10,top+y,lw-24,16,kText,draw,false,nullptr,1.3f)+17;
-            if(draw)Txt("YOUR TASK",leftX+10,top+y,14,kSky);
-            y+=27;
-            y+=Wrap(l.prompt,leftX+10,top+y,lw-24,17,kText,draw,false,nullptr,1.35f)+20;
-            if(draw)Txt("FUNCTION SIGNATURE",leftX+10,top+y,14,kMuted);
-            y+=26;
-            y+=Wrap(l.signature,leftX+10,top+y,lw-24,16,kAmber,draw,false,nullptr,1.3f)+18;
-            if(draw)Txt("EXAMPLE",leftX+10,top+y,14,kMuted);
-            y+=25;
-            y+=Wrap(l.example,leftX+10,top+y,lw-24,16,kText,draw,false,nullptr,1.3f)+25;
-            if(draw)Txt("PROGRESSIVE HINTS",leftX+10,top+y,14,kMuted);
-            y+=26;
-            for(int j=0;j<labHints;j++) {
-                const float hh=Wrap(l.hints[j],leftX+21,top+y+10,lw-50,16,kSky,false);
-                if(draw){Box({leftX+6,top+y,lw-20,hh+20},10,Al(kSky,0.12f));
-                    Wrap(l.hints[j],leftX+21,top+y+10,lw-50,16,kSky);}
-                y+=hh+28;
+            auto section=[&](const std::string& heading,const std::string& content,float size,Color color)->void {
+                if(draw) Txt(heading,leftX+10,top+y,13,kSky);
+                y+=26;
+                y+=Wrap(content,leftX+10,top+y,lw-30,size,color,draw,false,nullptr,1.33f)+24;
+            };
+            if(questionTab){
+                // Always show the complete assignment statement. The condensed
+                // summary in LabBank is only used on the lab selection cards.
+                section(questlabs::TaskCommentLabel(l.id),questlabs::TaskComment(l.id),15,kSky);
+                section("FULL ASSIGNMENT QUESTION",full.question,16,kText);
+                section("REQUIRED FUNCTION",l.signature,16,kAmber);
+                section("EXAMPLES / EXPECTED RESULT",full.example,15,kText);
+                if(full.checkNotes && full.checkNotes[0])
+                    section("LAB CHECKER NOTES",full.checkNotes,15,kMuted);
+                if(draw) Txt("Scroll here to read the complete instructions",leftX+10,top+y,12,kSky);
+                y+=30;
+            }else{
+                section("CONCEPT FROM YOUR NOTES",l.summary,16,kText);
+                section("TASK AT A GLANCE",l.prompt,16,kText);
+                if(draw) Txt("PROGRESSIVE HINTS",leftX+10,top+y,14,kSky);
+                y+=27;
+                if(labHints==0){
+                    y+=Wrap("Choose Hint below to reveal the first step. Read the full question before writing code.",
+                        leftX+10,top+y,lw-30,15,kMuted,draw)+16;
+                }
+                for(int j=0;j<labHints;j++){
+                    const float hh=Wrap(l.hints[j],leftX+21,top+y+10,lw-55,16,kSky,false);
+                    if(draw){
+                        Box({leftX+6,top+y,lw-27,hh+21},10,Al(kSky,0.12f));
+                        Wrap(l.hints[j],leftX+21,top+y+10,lw-55,16,kSky);
+                    }
+                    y+=hh+28;
+                }
             }
-            return y+20;
+            return y+15;
         };
         scLabInfo.Begin({leftX,top,lw,lh},std::max(lh,info(false)),dt);
         info(true);scLabInfo.End();
         const bool hintLeft=labHints<(int)l.hints.size()&&p.hints>0;
         if (Button({36,634,202,50},hintLeft?"Hint ("+std::to_string(p.hints)+" left)":"No hint tokens",kSky,hintLeft,18,true)) {
-            ++labHints; --p.hints;p.Save();scLabInfo.target=scLabInfo.maxS;
+            ++labHints; --p.hints;p.Save();labDetailTab=1;scLabInfo.Reset();
         }
         if(Button({247,634,184,50},"Back to labs",kViolet,true,18,true)){LeaveLab();return;}
 
-        Card3D({470,88,610,451},18,kSurface,kBorder,6);
-        Txt("Solution.cpp",488,100,17,kMuted);
-        Txt(questlabs::RuntimeReady()?"SAFE CODE TESTS READY":"WASI SDK + WASMTIME REQUIRED",739,100,14,questlabs::RuntimeReady()?kMint:kAmber);
-        Rectangle view{482,132,585,394};
-        labEditor.Update(view,true);
-        if(labChecked && labEditor.Text()!=labDrafts[labIndex])labChecked=false;
-        labEditor.Draw(view,true,time);
+        // Editor chrome mirrors the essential, uncluttered portions of a desktop IDE.
+        Card3D({470,88,610,541},15,kSurface,kBorder,4);
+        Txt("solution.cpp",486,96,18,kText,true);
+        TxtR(questlabs::RuntimeReady()?"C++17  /  SANDBOX READY":"SET UP WASI + WASMTIME",1061,100,12,
+             questlabs::RuntimeReady()?kMint:kAmber);
+        const auto tool=[&](float x,float w,const std::string& name,bool enabled=true){
+            return Button({x,125,w,27},name,kSky,enabled,13,true);
+        };
+        if(tool(482,70,"Undo",!labEditor.doc.undo.empty()))labEditor.Undo();
+        if(tool(557,70,"Redo",!labEditor.doc.redo.empty()))labEditor.Redo();
+        if(tool(632,67,"Find")){labEditor.findOpen=true;labEditor.focused=false;labEditor.search.clear();}
+        if(tool(704,80,"// Comment"))labEditor.doc.ToggleComment();
+        if(tool(789,42,"A -"))labEditor.FontSmaller();
+        if(tool(836,42,"A +"))labEditor.FontLarger();
+        if(tool(883,105,labOutputVisible?"Hide output":"Show output"))labOutputVisible=!labOutputVisible;
+        if(tool(993,73,labEditor.showKeys?"Hide keys":"Shortcuts"))labEditor.showKeys=!labEditor.showKeys;
+
+        Rectangle view{482,159,585,labOutputVisible?296.0f:449.0f};
+        labEditor.Update(view);
         if(labEditor.wantRun)SubmitLab();
-        Card3D({470,551,610,75},15,kSurface,kBorder,4);
-        if(!labChecked) {
-            Txt("Write the function, then press Run tests.",489,563,17,kText);
-            Txt("Ctrl+Enter to test  |  Code runs only in the isolated WASI runner.",489,592,14,kMuted);
-        }else {
-            Color c=labResult.accepted?kMint:labResult.compileError?kCoral:kAmber;
-            Txt(labResult.accepted?"PASSED":labResult.compileError?"COMPILATION ERROR":"KEEP TRYING",489,558,16,c);
-            Txt(Fit(labResult.message,558,13),489,583,13,kText);
-            Txt(Fit(labResultNote,558,12),489,605,12,c);
+        if(labEditor.wantSave){SaveLabDraft();Toast("Lab draft saved");}
+        const std::string current=labEditor.Text();
+        if(labChecked && current!=labLastRunText){labChecked=false;labEditor.errorLine=0;}
+        if(current!=labObservedText){
+            labObservedText=current;labAutoSaveTimer=0;labResetConfirm=false;
         }
-        if (Button({482,640,202,48},"Run tests",kMint,true,20)) SubmitLab();
-        if (Button({695,640,170,48},"Reset starter",kSky,true,17,true)) {
-            labEditor.SetText(l.starter);labDrafts[labIndex]=l.starter;questlabs::SaveDrafts(labDrafts);labChecked=false;
+        if(current!=labLastSaved){
+            labAutoSaveTimer+=dt;
+            if(labAutoSaveTimer>1.4f)SaveLabDraft();
+        }else labAutoSaveTimer=0;
+        labEditor.Draw(view,time);
+        const auto lineCol=labEditor.doc.RowCol();
+        const float sy=labOutputVisible?463.0f:615.0f;
+        Box({482,sy,585,20},5,kSurface2);
+        Txt("Ln "+std::to_string(lineCol.first)+", Col "+std::to_string(lineCol.second)+
+            "  |  "+std::to_string(labEditor.doc.LineCount())+" lines",490,sy+3,12,kMuted,true);
+        TxtR(current==labLastSaved?"Draft saved":"Saving after pause...",1055,sy+3,12,current==labLastSaved?kMint:kAmber);
+
+        if(labOutputVisible){
+            Card3D({478,490,594,136},12,kSurface,kBorder,3);
+            Color tone=!labChecked?kMuted:labResult.accepted?kMint:labResult.compileError?kCoral:kAmber;
+            std::string status=!labChecked?"OUTPUT  /  RUN TESTS TO SEE RESULTS":
+                labResult.accepted?"ALL TESTS PASSED":labResult.compileError?"COMPILER DIAGNOSTICS":
+                (labResult.available?"TEST FEEDBACK":"RUNNER SETUP NEEDED");
+            Txt(status,488,500,13,tone);
+            if(labChecked && labResult.total>0) TxtR(std::to_string(labResult.passed)+" / "+std::to_string(labResult.total)+" passed",1052,500,12,tone);
+            const std::string message=!labChecked?"Ctrl+Enter to run code. Errors and test results appear here; scroll to read them.":
+                labResult.message+(labResultNote.empty()?"":"\n"+labResultNote);
+            const auto printMessage=[&](bool draw)->float{
+                // Preserve compiler line breaks; also wrap long source snippets.
+                return Wrap(message,489,527,557,13,kText,draw,true,nullptr,1.25f);
+            };
+            scLabConsole.Begin({488,526,574,91},std::max(91.0f,printMessage(false)+6),dt);
+            printMessage(true);scLabConsole.End();
+        }
+        if (Button({482,640,202,48},"Run tests",kMint,true,20))SubmitLab();
+        if (Button({695,640,170,48},labResetConfirm?"Confirm reset":"Reset starter",labResetConfirm?kCoral:kSky,true,16,true)) {
+            if(labResetConfirm){
+                labEditor.SetText(std::string(questlabs::TaskComment(l.id)) + "\n\n" + l.starter);labChecked=false;labResetConfirm=false;
+                SaveLabDraft();labLastRunText.clear();scLabConsole.Reset();Toast("Starter restored");
+            }else {labResetConfirm=true;Toast("Click Reset again to confirm");}
         }
         if (Button({875,640,192,48},"Copy code",kViolet,true,17,true)){
             std::string code=labEditor.Text();SetClipboardText(code.c_str());Toast("Code copied");

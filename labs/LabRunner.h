@@ -3,6 +3,7 @@
 // Wasmtime sandbox and checks observable behaviour against multiple test cases.
 // This never compiles or runs learner code as a native host executable.
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -83,8 +84,27 @@ inline bool ParseOutput(const Lab& lab,const std::string& output,Result& result)
     const std::string marker="JQLAB_RESULT:";
     auto pos=output.rfind(marker);
     if(pos==std::string::npos){ result.message="No valid lab results returned. Check for a runtime error.";return false; }
+    // Parse the runner's three integers without sscanf, which MSVC rejects
+    // under its secure CRT checks. from_chars is available in C++17 and also
+    // rejects malformed or overflowing values without locale dependence.
     int pass=-1,total=-1,first=-1;
-    if (std::sscanf(output.c_str()+pos,"JQLAB_RESULT:%d:%d:%d",&pass,&total,&first)!=3 ||
+    const size_t numberStart=pos+marker.size();
+    const size_t lineEnd=output.find_first_of("\r\n",numberStart);
+    const char* cursor=output.data()+numberStart;
+    const char* end=output.data()+(lineEnd==std::string::npos?output.size():lineEnd);
+    auto readNumber=[&](int& value) {
+        auto parsed=std::from_chars(cursor,end,value);
+        if(parsed.ec!=std::errc{} || parsed.ptr==cursor) return false;
+        cursor=parsed.ptr;
+        return true;
+    };
+    auto readColon=[&]() {
+        if(cursor==end || *cursor!=':') return false;
+        ++cursor;
+        return true;
+    };
+    if (!readNumber(pass) || !readColon() || !readNumber(total) ||
+        !readColon() || !readNumber(first) || cursor!=end ||
         pass<0 || total<0 || pass>total || total>100 || first<0 || first>total) {
         result.message="The test result could not be interpreted.";return false;
     }
