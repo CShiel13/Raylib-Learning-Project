@@ -13,6 +13,7 @@
 #include "../hard/CodeEditor.h"  // Shared editor only; practice has its own runner and grading.
 #include "PracticeRunner.h"
 #include "PracticeActivity.h"
+#include "PracticeStyleBag.h"
 #include "MiniGames.h"
 #include "RecallReactor.h"
 #include "../ui/Theme.h"
@@ -22,6 +23,7 @@
 #include "../ui/Shapes.h"
 #include "../ui/Effects.h"
 #include "../ui/Widgets.h"
+#include "../ui/HubMenu.h"
 
 inline std::string NormalizePracticeOutput(const std::string& text) {
     std::string normalized;
@@ -52,6 +54,7 @@ class PracticeModeSession : public IPracticeActivity {
     unsigned puzzlesSolved = 0;    // Session-only; never serialized.
     unsigned hintsShown = 0;
     unsigned rng = 1;
+    PracticeStyleBag patternOrder;
     unsigned puzzleRevision = 0, runRevision = 0;
     bool started = false;
     bool hasOutput = false;
@@ -127,7 +130,7 @@ class PracticeModeSession : public IPracticeActivity {
             int complexity = (int)puzzlesSolved;
             if (complexity > 2 && NextRandom() % 5 == 0) complexity = std::max(0, complexity - 2);
             int rows = std::min(9, 5 + complexity / 3);
-            textStyle = complexity % 4;
+            textStyle = patternOrder.Next();
             static const char symbols[] = { '*', '#', '+', '@', '%' };
             char symbol = symbols[NextRandom() % 5];
             textTarget.clear();
@@ -148,7 +151,7 @@ class PracticeModeSession : public IPracticeActivity {
             std::string starter = "// Print with print(\"text\"), print(value), or printLine(value).\n";
             editor.SetText(starter);
         }
-        puzzle.style = (int)(puzzlesSolved % 5);
+        puzzle.style = mode == PracticeRunMode::GridDrawing ? patternOrder.Next() : 0;
         puzzle.colourCount = std::min(5, 1 + (int)(puzzlesSolved / 2));
         puzzle.cells.assign((size_t)puzzle.size * puzzle.size, Empty);
         int n = puzzle.size, mid = n / 2;
@@ -271,7 +274,9 @@ class PracticeModeSession : public IPracticeActivity {
     }
 
 public:
-    explicit PracticeModeSession(PracticeRunMode selectedMode) : mode(selectedMode) {}
+    explicit PracticeModeSession(PracticeRunMode selectedMode)
+        : patternOrder(selectedMode == PracticeRunMode::GridDrawing ? 5 : 4,
+          static_cast<unsigned>(GetRandomValue(1, 0x7fffffff))), mode(selectedMode) {}
     void Start() override {
         if (!started) { started = true; puzzlesSolved = 0; MakePuzzle(); }
         else RequestNewPuzzle();
@@ -407,60 +412,73 @@ class EndlessPractice {
     bool choosing = false;
     IPracticeActivity* active = nullptr;
 
-    void DrawActivityCard(Rectangle card, const char* title, const char* description,
-                          const char* action, Color accent, IPracticeActivity& activity) {
-        Vector2 mouse = Mouse();
-        bool hover = CheckCollisionPointRec(mouse, card);
-        Card3D(card, 18, Mix(kSurface, kSurface2, hover ? 0.35f : 0.0f),
-               Mix(kBorder, accent, hover ? 0.8f : 0.35f), 4);
-        Txt(title, card.x + 22, card.y + 18, 23, kText);
-        Wrap(description, card.x + 22, card.y + 54, card.width - 44, 14, kMuted,
-             true, false, nullptr, 1.18f);
-        Rectangle play{ card.x + 22, card.y + card.height - 62, card.width - 44, 44 };
-        if (Button(play, action, accent, true, 17, true)) {
-            active = &activity;
-            active->Start();
-            choosing = false;
-        }
+    Scroller chooserScroll;
+
+    bool DrawActivityCard(int index, const char* title, const char* description,
+                          const char* detail, Color accent, int icon) {
+        return HubMenu::Card(HubMenu::CardRect(index), title, description, detail,
+                             "Start practice", accent, icon);
     }
 
 public:
-    void Start() { choosing = true; active = nullptr; }
+    bool InChooser() const { return choosing || active == nullptr; }
+    // Escape inside an activity goes back one level, not all the way home.
+    bool BackToChooser() {
+        if (InChooser()) return false;
+        active = nullptr;
+        choosing = true;
+        chooserScroll.Reset();
+        return true;
+    }
+    void Start() { choosing = true; active = nullptr; chooserScroll.Reset(); }
 
     PracticeAction Draw(float dt) {
         if (!choosing && active) {
             if (active->Draw(dt) == PracticeAction::Back) {
                 active = nullptr;
-                choosing = true; // Return to the arcade rather than leaving practice entirely.
+                choosing = true;
+                chooserScroll.Reset();
             }
             return PracticeAction::None;
         }
-        DrawHeaderBackground();
-        if (DrawHeaderBackButton()) { choosing = false; return PracticeAction::Back; }
-        DrawHeaderTitle("Endless Practice", true);
-        Txt("Pick a challenge", 84, 47, 14, kMuted);
-
-        // Six self-contained activities. No activity owns or mutates course progress.
-        DrawActivityCard({ 28, 126, 324, 216 }, "Grid Drawing",
-            "Recreate coloured patterns with drawCell(x, y, colour).",
-            "Play Grid Drawing", kSky, drawing);
-        DrawActivityCard({ 388, 126, 324, 216 }, "Print Output",
-            "Use loops and print helpers to reproduce text patterns exactly.",
-            "Play Print Output", kViolet, printing);
-        DrawActivityCard({ 748, 126, 324, 216 }, "Bug Hunt",
-            "Spot common C++ mistakes and choose a fix before the bug escapes.",
-            "Hunt bugs", kCoral, bugHunt);
-        DrawActivityCard({ 28, 372, 324, 216 }, "Output Oracle",
-            "Trace variables, loops and conditions. Predict the exact output.",
-            "Predict output", kMint, outputOracle);
-        DrawActivityCard({ 388, 372, 324, 216 }, "Logic Locks",
-            "Combine comparisons, && and || to unlock increasingly tricky doors.",
-            "Crack the locks", kAmber, logicLocks);
-        DrawActivityCard({ 748, 372, 324, 216 }, "Recall Reactor",
-            "Type missing C++ from memory. Charge circuits and revisit skills on later days.",
-            "Charge reactor", kMint, recallReactor);
-        TxtC("Six activities  |  No course rewards  |  Recall reviews saved separately",
-             550, 625, 14, kMuted, true);
+        // The Game's shared TopBar draws the same header, stats and Back button
+        // used by Bonus Games and Other Languages.
+        chooserScroll.Begin({0, 74, 1100, 626}, HubMenu::ScrollHeight(6), dt);
+        HubMenu::Heading("Practice C++", "Choose a practice activity. Switch whenever you like.");
+        struct Tile {
+            const char* title;
+            const char* desc;
+            const char* detail;
+            Color accent;
+            int icon;
+            IPracticeActivity* session;
+        };
+        Tile tiles[] = {
+            {"Bug Hunt", "Find common C++ mistakes and fix them.",
+             "QUICK CHALLENGE  |  No compiler", kCoral, IC_BOLT, &bugHunt},
+            {"Output Oracle", "Predict what a short C++ program prints.",
+             "QUICK CHALLENGE  |  No compiler", kMint, IC_STAR, &outputOracle},
+            {"Logic Locks", "Solve puzzles with conditions and operators.",
+             "QUICK CHALLENGE  |  No compiler", kAmber, IC_LOCK, &logicLocks},
+            {"Recall Reactor", "Type missing code and revisit older skills.",
+             "WRITE C++  |  No compiler", kMint, IC_BOLT, &recallReactor},
+            {"Grid Drawing", "Write C++ to reproduce a colourful grid.",
+             "WRITE C++  |  WASI/Wasmtime", kSky, IC_STAR, &drawing},
+            {"Print Output", "Write C++ to reproduce a text pattern.",
+             "WRITE C++  |  WASI/Wasmtime", kViolet, IC_BOLT, &printing}
+        };
+        IPracticeActivity* selected = nullptr;
+        for (int i = 0; i < 6; ++i) {
+            const Tile& t = tiles[i];
+            if (DrawActivityCard(i, t.title, t.desc, t.detail, t.accent, t.icon))
+                selected = t.session;
+        }
+        chooserScroll.End();
+        if (selected) {
+            active = selected;
+            active->Start();
+            choosing = false;
+        }
         return PracticeAction::None;
     }
 };

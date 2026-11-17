@@ -8,4 +8,5 @@
 #include "Effects.h"
 #include "Widgets.h"
 #include "Scroller.h"
+#include "HubMenu.h"
 #include "LegacyAvatar.h"

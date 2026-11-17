@@ -15,8 +15,14 @@
 #include "hard/Hard.h"
 #include "practice/Practice.h"
 #include "bonus/ProgrammerMillionaireScreen.h"
+#include "bonus/RobotRoutinesScreen.h"
+#include "bonus/DebugVaultScreen.h"
+#include "engagement/Rewards.h"
+#include "engagement/TimedScreens.h"
 #include "content/cpp/CppCourse.h"
 #include "app/LessonRetryPolicy.h"
+#include "labs/LabRunner.h"
+#include "labs/LabDrafts.h"
 
 // Optional easter egg: if ee/mode.h exists it is compiled in; delete the folder and the game builds without it.
 #if defined(__has_include)
@@ -26,7 +32,7 @@
 #  endif
 #endif
 
-enum class Screen { Menu, Bonus, Map, Lesson, Result, Shop, Quests, Hard, Character, Practice, Millionaire };
+enum class Screen { Menu, Learn, Labs, LabTask, Bonus, Games, Map, Lesson, Result, Shop, Quests, Hard, Character, Practice, Millionaire, RobotRoutines, DebugVault, RapidReview, MatchMadness };
 
 class Game {
 public:
@@ -36,11 +42,15 @@ public:
         InstallCppCourse(courses);        // the full C++ course replaces the outline from Content.h
         topics = courses[0].topics;
         dispXp = (float)p.xp; dispCoins = (float)p.coins;
+        labDrafts = questlabs::LoadDrafts();
     }
-    void SaveNow() const { if (screen != Screen::Practice) p.Save(); }
+    void SaveNow() const { if (screen != Screen::Practice) { p.Save(); rewards.Save(); }
+        auto drafts=labDrafts; if(screen==Screen::LabTask && labIndex>=0 && labIndex<(int)drafts.size()) drafts[labIndex]=labEditor.Text();
+        questlabs::SaveDrafts(drafts); }
 
     void Frame() {
         float dt = GetFrameTime(); if (dt > 0.05f) dt = 0.05f;
+        rewards.Refresh();
 #ifdef JQ_SH2
         if (sh2mode) {                                       // easter egg owns the whole frame while it runs
             if (!sh2mode->Frame(dt)) { sh2mode.reset(); fade = 1.0f; }
@@ -57,16 +67,22 @@ public:
         if (IsKeyPressed(KEY_ESCAPE)) {
             if (screen != Screen::Practice) p.Save();
             if (screen == Screen::Map) Go(mapFrom);
-            else if (screen == Screen::Bonus) Go(Screen::Menu);
+            else if (screen == Screen::Bonus || screen == Screen::Games || screen == Screen::Learn) Go(Screen::Menu);
+            else if (screen == Screen::Labs) Go(Screen::Learn);
+            else if (screen == Screen::LabTask) LeaveLab();
             else if (screen == Screen::Shop || screen == Screen::Quests || screen == Screen::Character) Go(from);
             else if (screen == Screen::Lesson || screen == Screen::Result) Go(Screen::Map);
             else if (screen == Screen::Hard) EnterResult();
-            else if (screen == Screen::Practice) Go(practiceFrom);
-            else if (screen == Screen::Millionaire) Go(Screen::Bonus);
+            else if (screen == Screen::Practice && !practice.BackToChooser()) Go(practiceFrom);
+            else if (screen == Screen::Millionaire || screen == Screen::RobotRoutines || screen == Screen::DebugVault || screen == Screen::RapidReview || screen == Screen::MatchMadness) Go(Screen::Games);
         }
         switch (screen) {
         case Screen::Menu:   DrawMenu(); break;
+        case Screen::Learn:  DrawLearn(); break;
+        case Screen::Labs:   DrawLabs(); break;
+        case Screen::LabTask: DrawLabTask(dt); break;
         case Screen::Bonus:  DrawBonus(); break;
+        case Screen::Games:  DrawGames(); break;
         case Screen::Map:    DrawMap(); break;
         case Screen::Lesson: DrawLesson(dt); break;
         case Screen::Result: DrawResult(dt); break;
@@ -74,8 +90,19 @@ public:
         case Screen::Quests: DrawQuests(); break;
         case Screen::Hard:   DrawHard(dt); break;
         case Screen::Character: DrawCharacter(); break;
-        case Screen::Practice: if (practice.Draw(dt) == PracticeAction::Back) Go(practiceFrom); break;
+        case Screen::Practice:
+            if (practice.InChooser()) {
+                if (TopBar("Practice C++", true, true)) { Go(practiceFrom); break; }
+                // TopBar can also navigate to Shop/Quests/Character.
+                if (screen != Screen::Practice) break;
+            }
+            if (practice.Draw(dt) == PracticeAction::Back) Go(practiceFrom);
+            break;
         case Screen::Millionaire: DrawMillionaire(); break;
+        case Screen::RobotRoutines: DrawRobotRoutines(dt); break;
+        case Screen::DebugVault: DrawDebugVault(); break;
+        case Screen::RapidReview: DrawRapidReview(dt); break;
+        case Screen::MatchMadness: DrawMatchMadness(dt); break;
         }
         FxUpdate(dt); FxDraw();
 
@@ -104,13 +131,27 @@ private:
     Screen practiceFrom = Screen::Menu;
     EndlessPractice practice;
     ProgrammerMillionaireScreen millionaire;
+    RobotRoutinesScreen robotRoutines;
+    DebugVaultScreen debugVault;
+    engagement::Rewards rewards;
+    engagement::RapidReviewScreen rapidReview;
+    engagement::MatchMadnessScreen matchMadness;
+    int labGroup = 0, labIndex = 0, labHints = 0;
+    bool labChecked = false, labSolved = false;
+    questlabs::Result labResult;
+    CodeEditor labEditor;
+    std::string labResultNote;
+    std::vector<std::string> labDrafts = std::vector<std::string>(questlabs::All().size());
+    bool editingFriendCode = false;
+    std::string incomingFriendCode;
+    std::string friendStatus;
     float time = 0, fade = 0, toastT = 0;
     std::string toast;
     float dispXp = 0, dispCoins = 0;
 
     // menu / map animation
     float cardHover[8] = { 0 }, rowHover[40] = { 0 }, nodeHover[40] = { 0 };
-    Scroller scMenu, scBonus, scMap, scSide, scShop, scQuest, scCards, scHard;
+    Scroller scMenu, scBonus, scMap, scSide, scShop, scQuest, scCards, scHard, scLabs, scLabInfo;
     // hard mode
     const HardProblem* hard = nullptr;
     CodeEditor editor;
@@ -155,12 +196,17 @@ private:
     // lesson cards (shown before a module's questions)
     bool inCards = false; int cardIdx = 0, selPart = -1; float cardT = 0;
     bool reviewing = false;                        // lesson cards re-opened from inside a quiz
-    bool recallRevealed = false;                   // prompt answer remains hidden until requested
+    bool recallRevealed = false;
+    bool flashRated = false;
+    bool flashRevisit = false;
+    std::vector<int> flashMissed;
+    size_t flashRevisitAt = 0;                   // prompt answer remains hidden until requested
 
     void Go(Screen s) {
 #ifdef JQ_SH2
         if (screen == Screen::Bonus && s != Screen::Bonus) konami.Reset();
 #endif
+        if (s == Screen::Games || s == Screen::Bonus) scBonus.Reset();
         screen = s; fade = 1.0f;
     }
     void Toast(const std::string& s) { toast = s; toastT = 2.5f; }
@@ -217,7 +263,7 @@ private:
         correct = streak = bestStreak = 0;
         resXp = resCoins = levelUps = resLevelCoins = 0; progShown = 0; hurtT = 0;
         ResetItem();
-        inCards = !mod->lesson.empty(); reviewing = false; cardIdx = 0; selPart = -1; cardT = 0; recallRevealed = false; scCards.Reset();
+        inCards = !mod->lesson.empty(); reviewing = false; cardIdx = 0; selPart = -1; cardT = 0; recallRevealed = false; flashRated = false; flashRevisit = false; flashMissed.clear(); flashRevisitAt = 0; scCards.Reset();
         Go(Screen::Lesson);
     }
     // ----------------------------------------------------------- code question modes
@@ -465,7 +511,7 @@ private:
         cardT += dt;
         const std::vector<LessonCard>& cards = mod->lesson;
         const LessonCard& c = cards[cardIdx];
-        bool last = cardIdx + 1 >= (int)cards.size();
+        bool last = flashRevisit ? flashRevisitAt + 1 >= flashMissed.size() : cardIdx + 1 >= (int)cards.size();
         bool replay = p.done.count(Key(modTopic, modIdx)) > 0;
         float enter = EaseOut(cardT / 0.35f);
         Vector2 m = Mouse();
@@ -483,9 +529,10 @@ private:
         }
 
         float th0 = Wrap(c.text, 150, 0, 800, 21, kText, false, false, nullptr, 1.4f);
-        float promptH = c.recallPrompt.empty() ? 0.0f : 36 + Wrap(c.recallPrompt, 0, 0, 750, 19, kText, false) + 55;
-        float answerH = (recallRevealed && !c.recallAnswer.empty())
-            ? 20 + Wrap(c.recallAnswer, 0, 0, 744, 18, kText, false) + 18 : 0.0f;
+        const std::string flashFront = c.recallPrompt.empty() ? "Without looking above, explain: " + c.title : c.recallPrompt;
+        const std::string flashBack = c.recallAnswer.empty() ? c.text : c.recallAnswer;
+        float promptH = 36 + Wrap(flashFront, 0, 0, 750, 19, kText, false) + 74;
+        float answerH = recallRevealed ? 30 + Wrap(flashBack, 0, 0, 744, 18, kText, false) + 85 : 0.0f;
         float chc = std::max(H - 74 - 110, 112 + 58 + th0 + 26 +
             (c.code.empty() ? 0.0f : 74 + 18 + (c.parts.empty() ? 0.0f : 130)) +
             promptH + answerH + 48 - 74);
@@ -539,18 +586,29 @@ private:
             y = y + 74 + 18 + (c.parts.empty() ? 0.0f : 130);
         }
 
-        if (!c.recallPrompt.empty()) {
-            const float pHeight = Wrap(c.recallPrompt, 0, 0, 744, 19, kText, false);
-            Rectangle recallBox{ 150, y + 8, 800, 36 + pHeight + 14 };
-            Box(recallBox, 14, Al(kSky, 0.12f));
-            Txt("TRY TO PREDICT BEFORE REVEALING", recallBox.x + 16, recallBox.y + 10, 13, kSky);
-            Wrap(c.recallPrompt, recallBox.x + 16, recallBox.y + 36, 744, 19, kText);
-            y += recallBox.height + 22;
+        // Flashcard: retrieve from memory, flip to reveal, then self-rate.
+        // Cards marked "Review again" return once at the end of the lesson.
+        {
+            const float pHeight = Wrap(flashFront, 0, 0, 744, 19, kText, false);
+            Rectangle flashBox{150, y + 8, 800, 36 + pHeight + 18};
+            Box(flashBox, 14, Al(kSky, 0.12f));
+            Txt(flashRevisit ? "FLASHCARD - SECOND TRY" : "FLASHCARD - RECALL WITHOUT LOOKING ABOVE", flashBox.x + 16, flashBox.y + 10, 13, kSky);
+            Wrap(flashFront, flashBox.x + 16, flashBox.y + 36, 744, 19, kText);
+            y += flashBox.height + 18;
             if (recallRevealed) {
-                const float aHeight = Wrap(c.recallAnswer, 0, 0, 744, 18, kText, false);
-                Box({ 150, y, 800, aHeight + 24 }, 14, Al(kMint, 0.10f));
-                Wrap(c.recallAnswer, 166, y + 12, 744, 18, kText);
-            } else if (Button({ 150, y, 230, 46 }, "Reveal explanation", kViolet, true, 18, true)) {
+                const float aHeight = Wrap(flashBack, 0, 0, 744, 18, kText, false);
+                Box({150, y, 800, aHeight + 28}, 14, Al(kMint, 0.10f));
+                Wrap(flashBack, 166, y + 13, 744, 18, kText);
+                y += aHeight + 43;
+                if (!flashRated) {
+                    if (Button({150, y, 246, 47}, "I remembered", kMint, true, 18)) flashRated = true;
+                    if (Button({414, y, 246, 47}, "Review again", kAmber, true, 18, true)) {
+                        flashRated = true;
+                        if (!flashRevisit && std::find(flashMissed.begin(), flashMissed.end(), cardIdx) == flashMissed.end())
+                            flashMissed.push_back(cardIdx);
+                    }
+                } else Txt("Card rated. Continue when you're ready.", 150, y + 10, 16, kMuted);
+            } else if (Button({150, y, 230, 47}, "Flip flashcard", kViolet, true, 18, true)) {
                 recallRevealed = true;
             }
         }
@@ -558,14 +616,27 @@ private:
         scCards.End();
         DrawRectangle(-1500, (int)(H - 110), 4100, 110, kSurface);
         DrawRectangle(-1500, (int)(H - 110), 4100, 2, kBorder);
-        int n = (int)cards.size();
+        int n = flashRevisit ? (int)flashMissed.size() : (int)cards.size();
+        int dot = flashRevisit ? (int)flashRevisitAt : cardIdx;
         for (int i = 0; i < n; i++)
-            DrawCircleV({ W / 2 - (n - 1) * 14.0f + i * 28, H - 56 }, i == cardIdx ? 7.0f : 5.0f, i == cardIdx ? kSky : kBorder);
-        if (cardIdx > 0 && Button({ 150, H - 84, 150, 56 }, "Back", kSky, true, 21, true)) { cardIdx--; cardT = 0; selPart = -1; recallRevealed = false; scCards.Reset(); }
-        if (Button({ W - 150 - 200, H - 84, 200, 56 }, last ? (reviewing ? "Back to quiz" : "Start quiz") : "Next", kMint, true, 23) || IsKeyPressed(KEY_ENTER)) {
-            if (last) { itemT = reviewing ? 1.0f : 0.0f; inCards = false; reviewing = false; }
-            else { cardIdx++; cardT = 0; selPart = -1; recallRevealed = false; scCards.Reset(); }
+            DrawCircleV({ W / 2 - (n - 1) * 14.0f + i * 28, H - 56 }, i == dot ? 7.0f : 5.0f, i == dot ? kSky : kBorder);
+        if (!flashRevisit && cardIdx > 0 && Button({ 150, H - 84, 150, 56 }, "Back", kSky, true, 21, true)) {
+            cardIdx--; cardT = 0; selPart = -1; recallRevealed = false; flashRated = false; scCards.Reset();
         }
+        std::string nextLabel = last ? (!flashRevisit && !flashMissed.empty() ? "Review missed" : (reviewing ? "Back to quiz" : "Start quiz")) : "Next";
+        if (Button({ W - 150 - 200, H - 84, 200, 56 }, nextLabel, kMint, flashRated, 22)
+            || (flashRated && IsKeyPressed(KEY_ENTER))) {
+            if (last) {
+                if (!flashRevisit && !flashMissed.empty()) {
+                    flashRevisit = true; flashRevisitAt = 0; cardIdx = flashMissed[0];
+                } else { itemT = reviewing ? 1.0f : 0.0f; inCards = false; reviewing = false; }
+            } else {
+                if (flashRevisit) { ++flashRevisitAt; cardIdx = flashMissed[flashRevisitAt]; }
+                else ++cardIdx;
+            }
+            cardT = 0; selPart = -1; recallRevealed = false; flashRated = false; scCards.Reset();
+        }
+        if (!flashRated) Txt("Flip the card, then mark your recall to continue.", 390, H - 96, 14, kMuted);
     }
 
     void ResetItem() {
@@ -582,7 +653,9 @@ private:
     }
     int AwardXP(int amount) {
         int before = p.Level();
-        int gained = p.AddXP(amount);
+        int actual = amount * rewards.Multiplier();
+        int gained = p.AddXP(actual);
+        rewards.RecordXp(actual);
         levelUps += gained;
         resLevelCoins += p.lastLevelCoins;
         if (gained > 0) {
@@ -594,19 +667,20 @@ private:
     void Grade(bool right, bool isCode, const std::string& wrongInfo, const std::string& expl) {
         if (answered) return; // One judgement per attempt, regardless of overlapping input.
         answered = true; wasRight = right; answerT = 0;
+        rewards.RecordAnswer(right);
         if (right) {
             correct++; streak++; bestStreak = std::max(bestStreak, streak);
             float mult = p.CoinMult() * (streak >= 3 ? 2.0f : 1.0f);
             int c = (int)std::lround((isCode ? 5 : 2) * mult);
             int x = isCode ? 20 : 10;
-            p.coins += c; resCoins += c; resXp += x;
+            p.coins += c; resCoins += c; resXp += x * rewards.Multiplier();
             int lv = AwardXP(x);
             p.Note(QK_CORRECT, 1); p.Note(QK_STREAK, streak);
             if (isCode) p.Note(QK_CODE, 1);
             feedback = expl;
             FxBurst(fxAt.x, fxAt.y, isCode ? 70 : 34);
             FxRing(fxAt.x, fxAt.y, kMint, 90);
-            FxFloat(fxAt.x + 40, fxAt.y - 30, "+" + std::to_string(x) + " XP", kMint);
+            FxFloat(fxAt.x + 40, fxAt.y - 30, "+" + std::to_string(x * rewards.Multiplier()) + " XP", kMint);
             FxFloat(fxAt.x + 40, fxAt.y + 4, "+" + std::to_string(c) + " coins", kAmber, 22);
             if (lv > 0) FxBurst(W / 2, 120, 60);
         }
@@ -667,12 +741,13 @@ private:
             if (firstClear) {
                 bool test = modIdx < 0;
                 int bx = test ? 50 : 20, bc = test ? 20 : 5;
-                resXp += bx; resCoins += bc; p.coins += bc;
+                resXp += bx * rewards.Multiplier(); resCoins += bc; p.coins += bc;
                 AwardXP(bx);
                 p.done.insert(k);
                 p.Note(QK_MODULES, 1);
             }
         }
+        if (ok) rewards.RecordLesson();
         p.Save();
         hard = (ok && p.hardMode) ? FindHard(courses[course].name, modTopic, modIdx) : nullptr;
         hardFromMap = false;
@@ -695,7 +770,7 @@ private:
         std::string hk = Key(modTopic, modIdx) + "hard";
         if (!p.done.count(hk)) {
             p.done.insert(hk);
-            resXp += hard->xp; resCoins += hard->coins; p.coins += hard->coins;
+            resXp += hard->xp * rewards.Multiplier(); resCoins += hard->coins; p.coins += hard->coins;
             AwardXP(hard->xp);
             p.Note(QK_CODE, 1);
             hardReward = "+" + std::to_string(hard->xp) + " XP   +" + std::to_string(hard->coins) + " coins  (first solve)";
@@ -750,7 +825,8 @@ private:
         DrawCircleV({ lp.x + 24, lp.y + 22 }, 17, kMint);
         TxtC(std::to_string(p.Level()), lp.x + 24, lp.y + 10, 20, kBg);
         float inLvl = dispXp - 100.0f * std::floor(dispXp / 100.0f);
-        Txt("XP " + std::to_string((int)inLvl) + " / 100", lp.x + 50, lp.y + 5, 13, kMuted);
+        Txt("XP " + std::to_string((int)inLvl) + " / 100" + (rewards.Active() ? " (2x)" : ""),
+            lp.x + 50, lp.y + 5, 13, rewards.Active() ? kMint : kMuted);
         Bar({ lp.x + 50, lp.y + 27, 148, 9 }, inLvl / 100.0f, kMint);
         return backClicked;
     }
@@ -779,149 +855,326 @@ private:
         Go(Screen::Map);
     }
 
+    // One large click target per destination; the label makes the result explicit.
+    // This is shared by the main menu and bonus-game shortcuts.
+    bool DrawDestinationCard(Rectangle r, const std::string& title,
+                             const std::string& description, const std::string& action,
+                             Color accent, int icon, int hoverIndex) {
+        const bool hover = CheckCollisionPointRec(Mouse(), r);
+        cardHover[hoverIndex] = Smooth(cardHover[hoverIndex], hover ? 1.0f : 0.0f, 16, GetFrameTime());
+        const float h = cardHover[hoverIndex];
+        Rectangle face{r.x, r.y - 4 * h, r.width, r.height};
+        Card3D(face, 22, Mix(kSurface, kSurface2, h * 0.7f), Mix(kBorder, accent, h), 6);
+        Box({face.x + 20, face.y + 27, 65, 65}, 18, accent);
+        Icon(icon, face.x + 52, face.y + 59, 18, OnColor(accent));
+        Txt(title, face.x + 106, face.y + 19, 25, kText);
+        Wrap(description, face.x + 106, face.y + 57, face.width - 133, 15, kMuted,
+             true, false, nullptr, 1.25f);
+        Txt(action + "  >", face.x + 106, face.y + face.height - 34, 17, accent);
+        return hover && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+    }
+
+    void OpenPractice(Screen source) {
+        practice.Start();
+        practiceFrom = source;
+        Go(Screen::Practice);
+    }
+
     void DrawMenu() {
         TopBar("C++ Quest", false, true);
-        scMenu.Begin({ 0, 74, W, H - 74 }, H - 74, GetFrameTime());
-        float dt = GetFrameTime();
-        Vector2 m = Mouse();
-        int ci = CppIndex();
-        const Course& cc = courses[ci];
+        scMenu.Begin({0, 74, W, H - 74}, H - 74, GetFrameTime());
+        const int ci = CppIndex();
+        const Course& cpp = courses[ci];
+        const int total = std::max(1, cpp.TotalNodes());
+        const int done = CourseDone(ci);
 
-        Txt("Learn C++", 35, 82, 36, kText);
-        Txt("From your first program to modern C++. Short lessons, quick quizzes, real progress.", 35, 126, 15, kMuted);
+        Txt("What would you like to do?", 35, 94, 33, kText);
+        Txt("Choose a path. You can switch activities at any time.", 35, 139, 16, kMuted);
 
-        // ---- hero card: the C++ course
-        Rectangle base{ 35, 158, 1030, 194 };
-        bool hov = CheckCollisionPointRec(m, base);
-        cardHover[0] = Smooth(cardHover[0], hov ? 1.0f : 0.0f, 16, dt);
-        float h = cardHover[0];
-        Rectangle r{ base.x, base.y - 6 * h, base.width, base.height };
-        Card3D(r, 26, Mix(kSurface, kSurface2, h), Mix(kBorder, cc.color, h), 9);
-        Rectangle ic{ r.x + 28, r.y + 36, 122, 122 };
-        Card3D(ic, 32, cc.color, Mix(cc.color, Color{ 255, 255, 255, 255 }, 0.25f), 6);
-        TxtC("C++", ic.x + 61, ic.y + 36, 46, OnColor(cc.color));
-        Txt("The C++ Course", r.x + 180, r.y + 16, 30, kText);
-        int nTopics = (int)cc.topics.size(), total = std::max(1, cc.TotalNodes()), done = CourseDone(ci);
-        Txt(std::to_string(nTopics) + " topics | " + std::to_string(total) + " modules and tests | hard-mode problems", r.x + 180, r.y + 54, 14, kMuted);
-        Wrap(cc.tagline, r.x + 180, r.y + 78, 530, 15, kText, true, false, nullptr, 1.25f);
-        Bar({ r.x + 180, r.y + 143, 500, 12 }, (float)done / total, cc.color);
-        Txt(std::to_string(done) + " / " + std::to_string(total) + " modules | " + std::to_string(100 * done / total) + "%", r.x + 180, r.y + 163, 13, kMuted);
-        Rectangle go{ r.x + r.width - 30 - 230, r.y + (r.height - 60) / 2, 230, 60 };
-        if (Button(go, done > 0 ? "Continue" : "Start learning", kMint, true, 22)) OpenCourse(ci, Screen::Menu);
-        if (hov && !CheckCollisionPointRec(m, go) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, cc.color, 70); OpenCourse(ci, Screen::Menu); }
-
-        // ---- bonus card
-        Rectangle bb0{ 35, 368, 1030, 112 };
-        bool bhov = CheckCollisionPointRec(m, bb0);
-        cardHover[1] = Smooth(cardHover[1], bhov ? 1.0f : 0.0f, 16, dt);
-        float bh = cardHover[1];
-        Rectangle br{ bb0.x, bb0.y - 5 * bh, bb0.width, bb0.height };
-        Card3D(br, 24, Mix(kSurface, kSurface2, bh), Mix(kBorder, kViolet, bh), 8);
-        Rectangle bi{ br.x + 24, br.y + 24, 64, 64 };
-        Card3D(bi, 22, kViolet, Mix(kViolet, Color{ 255, 255, 255, 255 }, 0.25f), 5);
-        Icon(IC_STAR, bi.x + 32, bi.y + 32, 20, OnColor(kViolet));
-        Txt("Bonus languages", br.x + 112, br.y + 14, 26, kText);
-        Wrap("Java, Python, C# and JavaScript courses with shared rewards.", br.x + 112, br.y + 51, 530, 14, kMuted, true, false, nullptr, 1.2f);
-        int bdone = 0, btotal = 0;
-        float chipX = br.x + br.width - 40 - 4 * 76;
-        int k = 0;
-        for (int i = 0; i < (int)courses.size(); i++) {
-            if (!IsBonus(i)) continue;
-            bdone += CourseDone(i); btotal += courses[i].TotalNodes();
-            Rectangle chip{ chipX + k * 76, br.y + 36, 64, 64 };
-            Card3D(chip, 16, courses[i].color, Mix(courses[i].color, Color{ 255, 255, 255, 255 }, 0.25f), 4);
-            std::string g = Glyph(courses[i].name);
-            TxtC(g, chip.x + 32, chip.y + 18, g.size() > 2 ? 22.0f : 26.0f, OnColor(courses[i].color));
-            k++;
+        // Primary next step: continue the course with visible saved progress.
+        Rectangle learn{35, 180, 1030, 198};
+        const bool hovered = CheckCollisionPointRec(Mouse(), learn);
+        cardHover[0] = Smooth(cardHover[0], hovered ? 1.0f : 0.0f, 16, GetFrameTime());
+        Card3D(learn, 24, Mix(kSurface, kSurface2, 0.7f * cardHover[0]),
+               Mix(kBorder, cpp.color, cardHover[0]), 8);
+        Card3D({learn.x + 25, learn.y + 33, 124, 124}, 28, cpp.color, cpp.color, 5);
+        TxtC("C++", learn.x + 87, learn.y + 72, 43, OnColor(cpp.color));
+        Txt("LEARN C++", learn.x + 177, learn.y + 21, 15, kMint);
+        Txt(done ? "Keep learning C++" : "Start your C++ journey", learn.x + 177, learn.y + 47, 28, kText);
+        Txt(std::to_string(cpp.topics.size()) + " topics - lessons, quizzes and coding challenges",
+            learn.x + 177, learn.y + 87, 15, kMuted);
+        Bar({learn.x + 177, learn.y + 126, 505, 11}, (float)done / total, cpp.color);
+        Txt(std::to_string(done) + " of " + std::to_string(total) + " completed (" +
+            std::to_string(100 * done / total) + "%)", learn.x + 177, learn.y + 150, 15, kMuted);
+        Rectangle start{learn.x + 770, learn.y + 68, 222, 62};
+        if (Button(start, "Choose learning path", kMint, true, 21) ||
+            (hovered && !CheckCollisionPointRec(Mouse(), start) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT))) {
+            Go(Screen::Learn);
         }
-        Txt(std::to_string(bdone) + " modules done in bonus courses", br.x + 112, br.y + 84, 12, kMuted);
-        if (bhov && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, kViolet, 70); scBonus.Reset(); Go(Screen::Bonus); }
 
-        // ---- independent endless practice card, below both course cards
-        Rectangle pb0{ 35, 496, 1030, 158 };
-        bool phov = CheckCollisionPointRec(m, pb0);
-        cardHover[7] = Smooth(cardHover[7], phov ? 1.0f : 0.0f, 16, dt);
-        float ph = cardHover[7];
-        Rectangle pr{ pb0.x, pb0.y - 5 * ph, pb0.width, pb0.height };
-        Card3D(pr, 24, Mix(kSurface, kSurface2, ph), Mix(kBorder, kSky, ph), 8);
-        Rectangle pi{ pr.x + 24, pr.y + 38, 76, 76 };
-        Card3D(pi, 22, kSky, Mix(kSky, Color{ 255, 255, 255, 255 }, 0.25f), 5);
-        Icon(IC_STAR, pi.x + 38, pi.y + 38, 21, OnColor(kSky));
-        Txt("Endless Practice", pr.x + 124, pr.y + 18, 28, kText);
-        Rectangle practiceGo{ pr.x + pr.width - 250 - 30, pr.y + 39, 250, 62 };
-        float practiceTextW = practiceGo.x - (pr.x + 124) - 22;
-        Wrap("Five ways to practise C++: draw grids, print patterns, hunt bugs, trace output and crack logic locks.",
-            pr.x + 124, pr.y + 57, practiceTextW, 14, kMuted, true, false, nullptr, 1.2f);
-        Txt("C++ practice subset | separate from course progress", pr.x + 124, pr.y + 119, 13, kSky);
-        if (Button(practiceGo, "Start practicing", kSky, true, 21)) {
-            practice.Start(); practiceFrom = Screen::Menu; Go(Screen::Practice);
+        // Equal-weight alternatives: practising and playing are not hidden under courses.
+        if (DrawDestinationCard({35, 401, 499, 163}, "Practice C++",
+                "Six quick and coding games. Get better through hands-on challenges.",
+                "Choose a practice game", kSky, IC_BOLT, 1)) {
+            OpenPractice(Screen::Menu);
         }
-        if (phov && !CheckCollisionPointRec(m, practiceGo) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-            FxRing(m.x, m.y, kSky, 70); practice.Start(); practiceFrom = Screen::Menu; Go(Screen::Practice);
+        if (DrawDestinationCard({556, 401, 509, 163}, "Bonus games",
+                "Try the career game show, robot mazes, and a codebreaking vault.",
+                "Explore bonus games", kViolet, IC_STAR, 2)) {
+            Go(Screen::Games);
+        }
+
+        // Other language courses are still one click away, without hiding the games.
+        Rectangle other{35, 584, 1030, 76};
+        const bool hoverOther = CheckCollisionPointRec(Mouse(), other);
+        Card3D(other, 17, hoverOther ? kSurface2 : kSurface,
+               hoverOther ? kViolet : kBorder, 4);
+        Txt("Other languages", other.x + 23, other.y + 12, 22, kText);
+        Txt("Explore Java, Python, C# and JavaScript", other.x + 23, other.y + 43, 15, kMuted);
+        TxtR("Browse courses  >", other.x + other.width - 27, other.y + 29, 18, kViolet);
+        if (hoverOther && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            scBonus.Reset(); Go(Screen::Bonus);
         }
         scMenu.End();
     }
 
+    // ----------------------------------------------------------- C++ LEARNING PATHS / LABS
+    void DrawLearn() {
+        if (TopBar("Learn C++", true, true)) { Go(Screen::Menu); return; }
+        if (screen != Screen::Learn) return;
+        HubMenu::Heading("Choose your C++ learning path", "Follow the guided course or solve coding labs with progressive hints and real test cases.");
+        int ci = CppIndex();
+        if (HubMenu::Card(HubMenu::CardRect(0), "Guided C++ course", "Learn through short lessons, quizzes and reviews.",
+                          std::to_string(CourseDone(ci)) + " / " + std::to_string(courses[ci].TotalNodes()) + " COMPLETE",
+                          "Continue course", kMint, IC_BOLT, "C++")) {
+            OpenCourse(ci, Screen::Learn); return;
+        }
+        int count = 0;
+        for (const auto& l : questlabs::All()) if (p.done.count(questlabs::SaveKey(l.id))) ++count;
+        if (HubMenu::Card(HubMenu::CardRect(1), "Hands-on coding labs", std::to_string(questlabs::All().size())+" function-writing challenges based on your notes.",
+                          std::to_string(count) + " / "+std::to_string(questlabs::All().size())+" COMPLETED  |  3 HINTS PER LAB",
+                          "Browse labs", kSky, IC_BULB, "{ }") ) { scLabs.Reset(); Go(Screen::Labs); }
+    }
+
+    void OpenLab(int index) {
+        labIndex=index; labHints=0;labChecked=false;labSolved=p.done.count(questlabs::SaveKey(index))>0;
+        const auto& task=questlabs::All().at(index);
+        labEditor.SetText(labDrafts[index].empty()?task.starter:labDrafts[index]);
+        labResult={}; labResultNote=""; scLabInfo.Reset(); Go(Screen::LabTask);
+    }
+    void LeaveLab() {
+        if (labIndex>=0 && labIndex<(int)labDrafts.size()) labDrafts[labIndex]=labEditor.Text();
+        questlabs::SaveDrafts(labDrafts);
+        Go(Screen::Labs);
+    }
+    void DrawLabs() {
+        if (TopBar("C++ Labs", true, true)) { Go(Screen::Learn); return; }
+        if (screen != Screen::Labs) return;
+        HubMenu::Heading("Hands-on coding labs", "Read the short concept guide, write a function, then run tests. Wrong attempts do not remove hearts.");
+        const float tabW=1030.0f / (float)questlabs::Groups().size();
+        for (int group=0;group<(int)questlabs::Groups().size();group++) {
+            Rectangle r{35+group*tabW,174,tabW-5,37};
+            bool selected=labGroup==group;
+            if(Button(r,questlabs::Groups()[group].title,selected?kMint:kSurface2,true,14,!selected)) {
+                if(labGroup!=group){labGroup=group;scLabs.Reset();}
+            }
+        }
+        std::vector<int> rows;
+        for (const auto& l : questlabs::All()) if (l.group==labGroup) rows.push_back(l.id);
+        const float lastBottom=rows.empty()?H:(HubMenu::CardRect((int)rows.size()-1).y+40+HubMenu::CardHeight+25);
+        scLabs.Begin({0,218,W,H-218},std::max(H-218,lastBottom-218),GetFrameTime());
+        int chosen=-1;
+        for (int i=0;i<(int)rows.size();i++){
+            const auto& l=questlabs::All()[rows[i]];
+            Rectangle r=HubMenu::CardRect(i);r.y+=40;
+            bool done=p.done.count(questlabs::SaveKey(l.id))!=0;
+            std::string details=done?"COMPLETED  |  REPLAY ANYTIME":"NEW LAB  |  3 PROGRESSIVE HINTS";
+            if (HubMenu::Card(r,std::to_string(l.id+1)+". "+l.title,l.summary,details,
+                done?"Review solution":"Write solution",done?kMint:kSky,done?IC_CHECK:IC_BULB)) chosen=l.id;
+        }
+        scLabs.End();
+        if(chosen>=0)OpenLab(chosen);
+    }
+    void SubmitLab(){
+        const auto& l=questlabs::All()[labIndex];
+        labDrafts[labIndex]=labEditor.Text();questlabs::SaveDrafts(labDrafts);
+        labResult=questlabs::Run(l,labDrafts[labIndex]);labChecked=true;
+        if(labResult.accepted) {
+            bool first=p.done.insert(questlabs::SaveKey(l.id)).second;
+            labSolved=true;
+            if(first) {
+                int earned=25*rewards.Multiplier();
+                p.AddXP(earned);p.Note(QK_CODE,1);
+                rewards.RecordAnswer(true);rewards.RecordXp(earned);
+                p.Save();rewards.Save();labResultNote="Earned "+std::to_string(earned)+" XP";
+                FxBurst(768,350,35);
+            }else labResultNote="Already completed. No duplicate XP awarded.";
+        }else labResultNote="No hearts lost. Adjust your code and try again.";
+    }
+    void DrawLabTask(float dt) {
+        const auto& l=questlabs::All()[labIndex];
+        if (TopBar("Lab "+std::to_string(l.id+1)+" of "+std::to_string(questlabs::All().size()),true,true)) {LeaveLab();return;}
+        if(screen!=Screen::LabTask)return;
+        Card3D({20,88,432,536},18,kSurface,kBorder,5);
+        Txt(Fit(l.title,400,25),36,98,25,kText);
+        Txt("READ  -  PLAN  -  WRITE  -  TEST",36,134,13,kSky);
+        const float leftX=36, top=168, lw=399, lh=420;
+        auto info=[&](bool draw)->float {
+            float y=0;
+            if(draw)Txt("CONCEPT FROM YOUR NOTES",leftX+10,top+y,14,kMint);
+            y+=27;
+            y+=Wrap(l.summary,leftX+10,top+y,lw-24,16,kText,draw,false,nullptr,1.3f)+17;
+            if(draw)Txt("YOUR TASK",leftX+10,top+y,14,kSky);
+            y+=27;
+            y+=Wrap(l.prompt,leftX+10,top+y,lw-24,17,kText,draw,false,nullptr,1.35f)+20;
+            if(draw)Txt("FUNCTION SIGNATURE",leftX+10,top+y,14,kMuted);
+            y+=26;
+            y+=Wrap(l.signature,leftX+10,top+y,lw-24,16,kAmber,draw,false,nullptr,1.3f)+18;
+            if(draw)Txt("EXAMPLE",leftX+10,top+y,14,kMuted);
+            y+=25;
+            y+=Wrap(l.example,leftX+10,top+y,lw-24,16,kText,draw,false,nullptr,1.3f)+25;
+            if(draw)Txt("PROGRESSIVE HINTS",leftX+10,top+y,14,kMuted);
+            y+=26;
+            for(int j=0;j<labHints;j++) {
+                const float hh=Wrap(l.hints[j],leftX+21,top+y+10,lw-50,16,kSky,false);
+                if(draw){Box({leftX+6,top+y,lw-20,hh+20},10,Al(kSky,0.12f));
+                    Wrap(l.hints[j],leftX+21,top+y+10,lw-50,16,kSky);}
+                y+=hh+28;
+            }
+            return y+20;
+        };
+        scLabInfo.Begin({leftX,top,lw,lh},std::max(lh,info(false)),dt);
+        info(true);scLabInfo.End();
+        const bool hintLeft=labHints<(int)l.hints.size()&&p.hints>0;
+        if (Button({36,634,202,50},hintLeft?"Hint ("+std::to_string(p.hints)+" left)":"No hint tokens",kSky,hintLeft,18,true)) {
+            ++labHints; --p.hints;p.Save();scLabInfo.target=scLabInfo.maxS;
+        }
+        if(Button({247,634,184,50},"Back to labs",kViolet,true,18,true)){LeaveLab();return;}
+
+        Card3D({470,88,610,451},18,kSurface,kBorder,6);
+        Txt("Solution.cpp",488,100,17,kMuted);
+        Txt(questlabs::RuntimeReady()?"SAFE CODE TESTS READY":"WASI SDK + WASMTIME REQUIRED",739,100,14,questlabs::RuntimeReady()?kMint:kAmber);
+        Rectangle view{482,132,585,394};
+        labEditor.Update(view,true);
+        if(labChecked && labEditor.Text()!=labDrafts[labIndex])labChecked=false;
+        labEditor.Draw(view,true,time);
+        if(labEditor.wantRun)SubmitLab();
+        Card3D({470,551,610,75},15,kSurface,kBorder,4);
+        if(!labChecked) {
+            Txt("Write the function, then press Run tests.",489,563,17,kText);
+            Txt("Ctrl+Enter to test  |  Code runs only in the isolated WASI runner.",489,592,14,kMuted);
+        }else {
+            Color c=labResult.accepted?kMint:labResult.compileError?kCoral:kAmber;
+            Txt(labResult.accepted?"PASSED":labResult.compileError?"COMPILATION ERROR":"KEEP TRYING",489,558,16,c);
+            Txt(Fit(labResult.message,558,13),489,583,13,kText);
+            Txt(Fit(labResultNote,558,12),489,605,12,c);
+        }
+        if (Button({482,640,202,48},"Run tests",kMint,true,20)) SubmitLab();
+        if (Button({695,640,170,48},"Reset starter",kSky,true,17,true)) {
+            labEditor.SetText(l.starter);labDrafts[labIndex]=l.starter;questlabs::SaveDrafts(labDrafts);labChecked=false;
+        }
+        if (Button({875,640,192,48},"Copy code",kViolet,true,17,true)){
+            std::string code=labEditor.Text();SetClipboardText(code.c_str());Toast("Code copied");
+        }
+    }
+
     void DrawMillionaire() {
-        if (TopBar("C++ Programmer?", true, false)) { Go(Screen::Bonus); return; }
+        if (TopBar("C++ Programmer?", true, false)) { Go(Screen::Games); return; }
         millionaire.Draw();
     }
 
+    void DrawRobotRoutines(float dt) {
+        if (TopBar("Robot Routines", true, false)) { Go(Screen::Games); return; }
+        robotRoutines.Draw(dt);
+    }
+
+    void DrawDebugVault() {
+        if (TopBar("Debug Vault", true, false)) { Go(Screen::Games); return; }
+        debugVault.Draw();
+    }
+
+    void DrawRapidReview(float dt) {
+        if (TopBar("Rapid Review", true, false)) { Go(Screen::Games); return; }
+        const int reward = rapidReview.Draw(dt);
+        if (reward > 0) { AwardXP(reward); p.Save(); Toast("Rapid Review: +" + std::to_string(reward * rewards.Multiplier()) + " XP"); }
+    }
+    void DrawMatchMadness(float dt) {
+        if (TopBar("Match Madness", true, false)) { Go(Screen::Games); return; }
+        const int reward = matchMadness.Draw(dt);
+        if (reward > 0) { AwardXP(reward); p.Save(); Toast("Match Madness: +" + std::to_string(reward * rewards.Multiplier()) + " XP"); }
+    }
+
+    // Shared hub layout: 2-column cards across Practice, Bonus Games and Other Languages.
+    void DrawGames() {
+        if (TopBar("Bonus games", true, true)) { Go(Screen::Menu); return; }
+        if (screen != Screen::Games) return;
+        struct Tile {
+            const char* title;
+            const char* desc;
+            const char* detail;
+            Color accent;
+            int icon;
+            Screen target;
+        };
+        const Tile tiles[] = {
+            {"Who Wants to Be a C++ Programmer?", "A 15-question programming game show.",
+             "TRIVIA  |  Lifelines and career ladder", kAmber, IC_STAR, Screen::Millionaire},
+            {"Robot Routines", "Program a robot to escape a maze.",
+             "PUZZLE  |  Random mazes", kSky, IC_BOLT, Screen::RobotRoutines},
+            {"Debug Vault", "Crack a secret code using logic clues.",
+             "PUZZLE  |  Fresh code every round", kViolet, IC_LOCK, Screen::DebugVault},
+            {"Rapid Review", "Answer C++ questions in just 60 seconds.",
+             "TIMED  |  Earn course XP", kMint, IC_BOLT, Screen::RapidReview},
+            {"Match Madness", "Match C++ terms with their definitions.",
+             "TIMED  |  Earn course XP", kCoral, IC_STAR, Screen::MatchMadness}
+        };
+        scBonus.Begin({0, 74, W, H - 74}, HubMenu::ScrollHeight(5), GetFrameTime());
+        HubMenu::Heading("Bonus games", "Play short challenges, puzzles and timed C++ games.");
+        Screen chosen = Screen::Games;
+        for (int i = 0; i < 5; ++i) {
+            const Tile& t = tiles[i];
+            if (HubMenu::Card(HubMenu::CardRect(i), t.title, t.desc, t.detail,
+                              "Play game", t.accent, t.icon)) chosen = t.target;
+        }
+        scBonus.End(); // close the scissor before switching screens
+        if (chosen == Screen::Games) return;
+        if (chosen == Screen::Millionaire) millionaire.Reset();
+        if (chosen == Screen::RobotRoutines) robotRoutines.Reset();
+        if (chosen == Screen::DebugVault) debugVault.Reset();
+        if (chosen == Screen::RapidReview) rapidReview.Reset();
+        if (chosen == Screen::MatchMadness) matchMadness.Reset();
+        Go(chosen);
+    }
+
+    // Other Languages is deliberately the only Konami-code entrance to Silent Localhost.
     void DrawBonus() {
 #ifdef JQ_SH2
-        if (konami.Feed()) { sh2mode = std::make_unique<sh2::Mode>(&courses[CppIndex()].topics); return; }   // Up Up Down Down Left Right Left Right B A
+        if (konami.Feed()) { sh2mode = std::make_unique<sh2::Mode>(&courses[CppIndex()].topics); return; }
 #endif
-        if (TopBar("Bonus languages", true, true)) { Go(Screen::Menu); return; }
+        if (TopBar("Other languages", true, true)) { Go(Screen::Menu); return; }
+        if (screen != Screen::Bonus) return;
         std::vector<int> idx;
-        for (int i = 0; i < (int)courses.size(); i++) if (IsBonus(i)) idx.push_back(i);
-        int rows = ((int)idx.size() + 2) / 3;
-        scBonus.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 350.0f + rows * 235 + 12 - 74), GetFrameTime());
-        float dt = GetFrameTime();
-        Vector2 m = Mouse();
-        Txt("Bonus languages", 35, 92, 36, kText);
-        Txt("Extra courses, plus a fictional C++ game show. The game show has no course rewards.", 35, 140, 17, kMuted);
-
-        Rectangle gameCard{35, 193, 1030, 112};
-        bool gameHover = CheckCollisionPointRec(m, gameCard);
-        Card3D(gameCard, 22, gameHover ? Mix(kSurface2, kViolet, 0.15f) : kSurface,
-               gameHover ? kAmber : kBorder, 6);
-        Box({56, 212, 72, 72}, 20, kViolet);
-        TxtC("15", 92, 228, 30, kText);
-        Txt("Who Wants to Be a C++ Programmer?", 151, 208, 25, kText);
-        Txt("15 random interviews | internship to dream job | three lifelines", 151, 248, 15, kMuted);
-        if (Button({825, 217, 210, 58}, "Play game show", kAmber, true, 19) ||
-            (gameHover && m.x < 825 && IsMouseButtonReleased(MOUSE_BUTTON_LEFT))) {
-            millionaire.Reset(); Go(Screen::Millionaire); scBonus.End(); return;
-        }
-        Txt("Bonus language courses", 35, 319, 20, kText);
-        for (int k = 0; k < (int)idx.size() && k < 8; k++) {
-            int i = idx[k];
+        for (int i = 0; i < (int)courses.size(); ++i) if (IsBonus(i)) idx.push_back(i);
+        scBonus.Begin({0, 74, W, H - 74}, HubMenu::ScrollHeight((int)idx.size()), GetFrameTime());
+        HubMenu::Heading("Other languages", "Explore another language. Your XP, coins and character carry across courses.");
+        int selected = -1;
+        for (int k = 0; k < (int)idx.size(); ++k) {
+            const int i = idx[k];
             const Course& c = courses[i];
-            Rectangle base{ 35.0f + (k % 3) * 350, 353.0f + (k / 3) * 235, 330, 215 };
-            bool hover = CheckCollisionPointRec(m, base);
-            cardHover[2 + k] = Smooth(cardHover[2 + k], hover ? 1.0f : 0.0f, 16, dt);
-            float h = cardHover[2 + k];
-            Rectangle r{ base.x, base.y - 6 * h, base.width, base.height };
-            Card3D(r, 22, Mix(kSurface, kSurface2, h), Mix(kBorder, c.color, h), 8);
-            Rectangle ic{ r.x + 22, r.y + 22, 64, 64 };
-            Card3D(ic, 18, c.color, Mix(c.color, Color{ 255, 255, 255, 255 }, 0.25f), 4);
-            std::string g = Glyph(c.name);
-            TxtC(g, ic.x + 32, ic.y + 15, g.size() > 2 ? 26.0f : 32.0f, OnColor(c.color));
-            Txt(c.name, r.x + 104, r.y + 24, 28, kText);
-            Txt(std::to_string(c.topics.size()) + " topics", r.x + 104, r.y + 58, 15, kMuted);
-            Wrap(c.tagline, r.x + 22, r.y + 102, r.width - 44, 15, kMuted, true, false, nullptr, 1.3f);
+            std::string detail = std::to_string(c.topics.size()) + " TOPICS";
             if (c.Ready()) {
-                int done = CourseDone(i), total = std::max(1, c.TotalNodes());
-                Bar({ r.x + 22, r.y + 166, r.width - 44, 10 }, (float)done / total, c.color);
-                Txt(std::to_string(done) + " / " + std::to_string(total) + " modules", r.x + 22, r.y + 184, 14, kMuted);
-                TxtR(std::to_string(100 * done / total) + "%", r.x + r.width - 22, r.y + 184, 14, kText);
-            }
-            else {
-                Txt("Coming soon - roadmap preview", r.x + 22, r.y + 180, 14, kMuted);
-            }
-            if (hover && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) { FxRing(m.x, m.y, c.color, 70); OpenCourse(i, Screen::Bonus); }
+                detail += "  |  " + std::to_string(CourseDone(i)) + " / " +
+                          std::to_string(c.TotalNodes()) + " complete";
+            } else detail += "  |  Preview";
+            if (HubMenu::Card(HubMenu::CardRect(k), c.name, c.tagline, detail,
+                              c.Ready() ? "Open course" : "Preview topics",
+                              c.color, IC_STAR, Glyph(c.name))) selected = i;
         }
         scBonus.End();
+        if (selected >= 0) {
+            FxRing(Mouse().x, Mouse().y, courses[selected].color, 70);
+            OpenCourse(selected, Screen::Bonus);
+        }
     }
 
     // ----------------------------------------------------------- MAP
@@ -1225,7 +1478,9 @@ private:
             DrawRectangle(-1500, (int)bar.y, 4100, 2, kBorder);
             if (Button({ 150, H - 84, 170, 56 }, "Hint  (" + std::to_string(p.hints) + ")", kSky, p.hints > 0, 21, true)) UseHint();
             if (!mod->lesson.empty() && Button({ 336, H - 84, 190, 56 }, "Review lesson", kViolet, true, 19, true)) {
-                reviewing = true; inCards = true; cardIdx = 0; cardT = 0; selPart = -1; recallRevealed = false; scCards.Reset();
+                reviewing = true; inCards = true; cardIdx = 0; cardT = 0; selPart = -1;
+                recallRevealed = false; flashRated = false; flashRevisit = false;
+                flashMissed.clear(); flashRevisitAt = 0; scCards.Reset();
             }
             if (it.isCode && it.mode != 1) {
                 bool ok = it.mode == 0 ? !it.placed.empty() : !input.empty();
@@ -1575,10 +1830,89 @@ private:
         scShop.End();
     }
 
+    // Weekly quests exchange local progress codes; no online account or server is implied.
+    void DrawRewardsHub() {
+        Txt("DAILY QUESTS AND BOOSTS", 150, 685, 21, kAmber);
+        Rectangle boost{150, 720, 800, 104};
+        Card3D(boost, 18, kSurface, kBorder, 4);
+        Txt("2x XP for 15 minutes", 175, 740, 21, kText);
+        Txt(rewards.Active() ? "ACTIVE: " + std::to_string(rewards.SecondsRemaining() / 60) + "m " +
+            std::to_string(rewards.SecondsRemaining() % 60) + "s remaining" :
+            std::to_string(rewards.Tokens()) + " boost tokens available", 175, 777, 17, rewards.Active() ? kMint : kMuted);
+        Txt("Study streak: " + std::to_string(rewards.DayStreak()) + " days (milestones: 3, 7, 14, 30)",
+            175, 801, 13, kMuted);
+        if (Button({732, 744, 185, 56}, rewards.Active() ? "Boost active" : "Activate 2x", kMint,
+                   !rewards.Active() && rewards.Tokens() > 0, 19)) {
+            if (rewards.Activate()) Toast("2x XP active for 15 minutes!");
+        }
+        static const char* dailyLabels[3] = {
+            "Answer 5 questions correctly", "Complete 1 course lesson", "Earn 100 XP today"
+        };
+        for (int i = 0; i < 3; ++i) {
+            float y = 838.0f + i * 98.0f;
+            Card3D({150,y,800,87},16,kSurface,kBorder,4);
+            Txt(dailyLabels[i],174,y+9,20,kText);
+            Txt(std::to_string(std::min(rewards.DailyProgress(i), rewards.DailyTarget(i))) + "/" +
+                std::to_string(rewards.DailyTarget(i)) + "  |  Reward: 1 boost token", 174, y+48,15,kMuted);
+            bool ready = rewards.CanClaimDaily(i);
+            if (Button({752,y+18,172,51}, rewards.DailyClaimed(i) ? "Claimed" : "Claim", kMint,
+                       ready,18) && rewards.ClaimDaily(i)) Toast("Daily quest: +1 XP boost token!");
+        }
+        Txt("TREASURE CHESTS",150,1151,21,kAmber);
+        for (int i=0;i<2;++i) {
+            float x = 150.0f + i*412.0f;
+            Card3D({x,1187,388,107},16,kSurface,kBorder,4);
+            Txt(i==0 ? "Early Bird" : "Night Owl",x+16,1203,22,kText);
+            Txt(i==0 ? "Finish a lesson before noon" : "Finish a lesson after 18:00",x+16,1237,15,kMuted);
+            if (Button({x+224,1246,145,40},"Open chest",kAmber,rewards.CanClaimChest(i),15)
+                && rewards.ClaimChest(i)) Toast("Treasure chest: +1 boost token!");
+        }
+        Txt("FRIENDS QUEST - WEEKLY",150,1323,22,kSky);
+        Card3D({150,1362,800,446},19,kSurface,kBorder,5);
+        Txt("Team goal: earn 300 combined XP this week",171,1385,20,kText);
+        Txt("You: " + std::to_string(rewards.WeeklySelfXp()) + " XP   |   Friend: " +
+            std::to_string(rewards.WeeklyFriendXp()) + " XP",171,1426,18,kMuted);
+        Bar({171,1460,759,14},(float)(rewards.WeeklySelfXp()+rewards.WeeklyFriendXp()) / rewards.WeeklyTarget(),kSky);
+        Txt("Offline co-op: exchange progress codes with a friend (no server or automatic sync).",171,1492,15,kMuted);
+        Txt("My weekly code:",171,1529,16,kText);
+        const std::string myCode = rewards.ShareCode();
+        Txt(Fit(myCode,490,17,true),171,1557,17,kSky,true);
+        if (Button({748,1535,172,43},"Copy my code",kSky,true,16,true)) {
+            SetClipboardText(myCode.c_str()); Toast("Progress code copied!");
+        }
+        Txt("Paste or type your friend's code:",171,1608,17,kText);
+        Rectangle inputRect{171,1644,536,49};
+        BoxB(inputRect,10,kBg,editingFriendCode?kSky:kBorder,2);
+        Txt(Fit(incomingFriendCode.empty() ? "Click here, then Ctrl+V" : incomingFriendCode,510,16,true),182,1657,16,
+            incomingFriendCode.empty()?kMuted:kText,true);
+        if (CheckCollisionPointRec(Mouse(),inputRect) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) editingFriendCode=true;
+        if (editingFriendCode) {
+            for (int c=GetCharPressed(); c>0; c=GetCharPressed()) {
+                if (c>=33 && c<=126 && incomingFriendCode.size()<90) incomingFriendCode+=(char)c;
+            }
+            if (IsKeyPressed(KEY_BACKSPACE) && !incomingFriendCode.empty()) incomingFriendCode.pop_back();
+            if ((IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)) && IsKeyPressed(KEY_V)) {
+                const char* clip=GetClipboardText(); if (clip) incomingFriendCode=std::string(clip).substr(0,90);
+            }
+            if (IsKeyPressed(KEY_ENTER)) editingFriendCode=false;
+        }
+        if (Button({725,1644,192,49},"Import code",kSky,!incomingFriendCode.empty(),17)
+            ) {
+            friendStatus = rewards.Import(incomingFriendCode) ? "Friend progress updated!" : "Invalid, expired, or different partner code.";
+            incomingFriendCode.clear(); editingFriendCode=false;
+        }
+        Txt(Fit(friendStatus.empty()?rewards.PartnerLabel():friendStatus,745,16),171,1706,16,kMuted);
+        if (Button({678,1731,242,55},rewards.WeeklyClaimed()?"Reward claimed":"Claim team reward",kMint,
+                   rewards.CanClaimWeekly(),18) && rewards.ClaimWeekly()) {
+            Toast("Team quest complete: +2 boost tokens!");
+        }
+        Txt("Codes detect typos but do not verify identity. Share only with someone you trust.",171,1765,13,kMuted);
+    }
+
     // ----------------------------------------------------------- QUESTS
     void DrawQuests() {
         if (TopBar("Quests", true, false)) { p.Save(); Go(from); return; }
-        scQuest.Begin({ 0, 74, W, H - 74 }, std::max(H - 74, 106.0f + (float)p.quests.size() * 134 + 30 - 74), GetFrameTime());
+        scQuest.Begin({ 0, 74, W, H - 74 }, 1850.0f, GetFrameTime());
         Vector2 m = Mouse();
         static const Color qc[4] = { kMint, kViolet, kCoral, kSky };
         for (int i = 0; i < (int)p.quests.size(); i++) {
@@ -1603,6 +1937,7 @@ private:
                 FxBurst(r.x + r.width - 110, r.y + 58, 40);
             }
         }
+        DrawRewardsHub();
         scQuest.End();
     }
 };
